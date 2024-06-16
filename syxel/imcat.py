@@ -1,21 +1,26 @@
-def main():
-    import sys
+def rgb_to_palette(rgb):
+    '''Convert an RGB image to a palette image.
 
+    Parameters
+    ----------
+    rgb : ndarray
+        An image with shape (M,N,3) and dtype uint8.
+
+    Returns
+    -------
+    active : ndarray
+        The active palette colours, with shape (P < 256,3) and dtype int8.
+    res : ndarray
+        The palette image, with shape (M,N) and dtype uint8.
+    '''
     import numpy as np
-    import imread as im
     from collections import Counter
-    ifname = sys.argv[1]
-
-    data = im.imread(ifname)
-    while data.shape[0] > 800 or data.shape[1] > 1200:
-        data = data[::2,::2]
-
-    cs = Counter([tuple(pix) for pix in data.reshape((-1,3))])
+    cs = Counter([tuple(pix) for pix in rgb.reshape((-1,3))])
 
     colours = list(cs.keys())
     colours.sort(key=lambda x: -cs[x])
     active = np.array(colours[:255], dtype=np.int32)
-    if sum(cs[tuple(c)] for c in active) < 0.5 * data.size:
+    if sum(cs[tuple(c)] for c in active) < 0.5 * rgb.size:
         active = []
         for r in range(0,257,64):
             if r == 256:
@@ -34,10 +39,25 @@ def main():
     for c in colours:
         palette[c] = ((active - c)**2).sum(1).argmin()
 
-    res = np.zeros(data.shape[:2], dtype=np.uint8)
-    for i in range(data.shape[0]):
-        for j in range(data.shape[1]):
-            res[i,j] = palette[tuple(data[i,j])]
+    res = np.zeros(rgb.shape[:2], dtype=np.uint8)
+    for i in range(rgb.shape[0]):
+        for j in range(rgb.shape[1]):
+            res[i,j] = palette[tuple(rgb[i,j])]
+    return active, res
+
+
+def main():
+    import sys
+
+    import numpy as np
+    import imread as im
+    ifname = sys.argv[1]
+
+    data = im.imread(ifname)
+    while data.shape[0] > 800 or data.shape[1] > 1200:
+        data = data[::2,::2]
+
+    active, res = rgb_to_palette(data)
     active = active.astype(np.int32) * 100 // 255
 
     out = sys.stdout.buffer
