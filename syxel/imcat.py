@@ -46,18 +46,25 @@ def rgb_to_palette(rgb):
     return active, res
 
 
+def load_image(ifname : str):
+    '''Load an image from a file.
+    '''
+
+    import imread as im
+    data = im.imread(ifname)
+    while data.shape[0] > 800 or data.shape[1] > 1200:
+        data = data[::2,::2]
+    if data.shape[2] == 4:
+        data = data[:,:,:3]
+    return data
+
 def main():
     import sys
 
     import numpy as np
-    import imread as im
     ifname = sys.argv[1]
 
-    data = im.imread(ifname)
-    while data.shape[0] > 800 or data.shape[1] > 1200:
-        data = data[::2,::2]
-
-    active, res = rgb_to_palette(data)
+    active, res = rgb_to_palette(load_image(ifname))
     active = active.astype(np.int32) * 100 // 255
 
     out = sys.stdout.buffer
