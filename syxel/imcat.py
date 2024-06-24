@@ -58,18 +58,10 @@ def load_image(ifname : str):
         data = data[:,:,:3]
     return data
 
-def main():
-    import sys
-
+def write_sixel(out, data, active):
     import numpy as np
-    ifname = sys.argv[1]
-
-    active, res = rgb_to_palette(load_image(ifname))
     active = active.astype(np.int32) * 100 // 255
-
-    out = sys.stdout.buffer
-
-    w,h = res.shape
+    w,h = data.shape
     sixel_header = b'\x1bP0;0;0q"1;1;'
     out.write(sixel_header)
 
@@ -78,8 +70,8 @@ def main():
         # 2 is for RGB
         out.write(f'#{i};2;{active[i,0]:};{active[i,1]:};{active[i,2]:}'.encode('ascii'))
 
-    for i in range(res.shape[0]//6):
-        sel = res[i*6:(i+1)*6]
+    for i in range(data.shape[0]//6):
+        sel = data[i*6:(i+1)*6]
         is_first = True
         for c in set(sel.ravel()):
             to_write = (sel == c).astype(np.int32)
@@ -93,4 +85,10 @@ def main():
             out.write(to_write)
         out.write(b'-')
     out.write(b'\x1b\\') # End of Sixel
+
+def main():
+    import sys
+    ifname = sys.argv[1]
+    active, data = rgb_to_palette(load_image(ifname))
+    write_sixel(sys.stdout.buffer, data, active)
 
