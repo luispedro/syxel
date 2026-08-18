@@ -26,27 +26,28 @@ rendering it, redirect stdout to a file — `main()` writes to `sys.stdout.buffe
 
 ## Architecture
 
-Everything lives in `syxel/imcat.py`, structured as a three-stage pipeline that
-`main()` wires together:
+The code is a three-stage pipeline that `syxel/imcat.py`'s `main()` wires together.
+`imcat.py` holds the image loading and the command line entry point; the SIXEL
+conversion itself lives in `syxel/sixel.py` (imported inside `main()`).
 
-1. `load_image(ifname)` — reads with `imread`, then halves the image by simple
-   `[::2,::2]` subsampling until it fits within 800x1200, and drops an alpha channel
-   if present. Returns an (M,N,3) uint8 array.
+1. `load_image(ifname)` (`imcat.py`) — reads with `imread`, then halves the image
+   by simple `[::2,::2]` subsampling until it fits within 800x1200, and drops an
+   alpha channel if present. Returns an (M,N,3) uint8 array.
 
-2. `rgb_to_palette(rgb)` — SIXEL supports at most 256 registers, so the image must be
-   quantized. The strategy is: count exact colours, take the 255 most frequent; if
-   those do not cover at least half the image, fall back to a fixed 5x9x5 RGB cube.
-   Every distinct source colour is then mapped to its nearest palette entry by squared
-   Euclidean distance. Returns `(active, res)` — the palette as (P,3) and the indexed
-   image as (M,N) uint8.
+2. `rgb_to_palette(rgb)` (`sixel.py`) — SIXEL supports at most 256 registers, so
+   the image must be quantized. The strategy is: count exact colours, take the 255
+   most frequent; if those do not cover at least half the image, fall back to a
+   fixed 5x9x5 RGB cube. Every distinct source colour is then mapped to its nearest
+   palette entry by squared Euclidean distance. Returns `(active, res)` — the
+   palette as (P,3) and the indexed image as (M,N) uint8.
 
-3. `write_sixel(out, data, active)` — emits the escape sequences. Palette values are
-   rescaled from 0-255 to the SIXEL 0-100 range. The image is processed in bands of
-   six rows; within each band, one pass is emitted per colour present (`#<n>` selects
-   the register), where each output byte encodes a column's six-pixel bitmask via a
-   dot product with `[1,2,4,8,16,32]` plus 63. `$` returns the cursor to the start of
-   the band for the next colour pass, `-` advances to the next band, and `\x1b\\`
-   terminates.
+3. `write_sixel(out, data, active)` (`sixel.py`) — emits the escape sequences.
+   Palette values are rescaled from 0-255 to the SIXEL 0-100 range. The image is
+   processed in bands of six rows; within each band, one pass is emitted per colour
+   present (`#<n>` selects the register), where each output byte encodes a column's
+   six-pixel bitmask via a dot product with `[1,2,4,8,16,32]` plus 63. `$` returns
+   the cursor to the start of the band for the next colour pass, `-` advances to
+   the next band, and `\x1b\\` terminates.
 
 `syxel/syxel_version.py` holds `__version__`, read dynamically by `pyproject.toml`.
 
