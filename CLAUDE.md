@@ -17,9 +17,11 @@ functions rather than at module top level.
 ```bash
 pip install -e .        # install for development (entry point: imcat)
 imcat image.png         # render an image to a SIXEL-capable terminal
+imcat --help            # one or more files, plus --version/--max-height/--max-width
+pixi run -e test test   # run the test suite (pytest + hypothesis, in tests/)
 ```
 
-There is no test suite, linter config, or CI in this repo. Verification is manual:
+There is no linter config or CI in this repo. Beyond the tests, verification is manual:
 run `imcat` in a terminal that supports SIXEL (e.g. xterm with sixel enabled, foot,
 mlterm, WezTerm) and look at the output. To inspect the byte stream instead of
 rendering it, redirect stdout to a file — `main()` writes to `sys.stdout.buffer`.
@@ -27,11 +29,14 @@ rendering it, redirect stdout to a file — `main()` writes to `sys.stdout.buffe
 ## Architecture
 
 The code is a three-stage pipeline that `syxel/imcat.py`'s `main()` wires together.
-`imcat.py` holds the image loading and the command line entry point; the SIXEL
-conversion itself lives in `syxel/sixel.py` (imported inside `main()`).
+`imcat.py` holds the image loading and the `argparse`-based command line entry point
+(`parse_args` builds the parser, `main(argv=None)` renders each file and writes a
+newline after it); the SIXEL conversion itself lives in `syxel/sixel.py` (imported
+inside `main()`).
 
-1. `load_image(ifname)` (`imcat.py`) — reads with `imread`, then halves the image
-   by simple `[::2,::2]` subsampling until it fits within 800x1200, and drops an
+1. `load_image(ifname, max_height=800, max_width=1200)` (`imcat.py`) — reads with
+   `imread`, then halves the image by simple `[::2,::2]` subsampling until it fits
+   within the limits (overridable with `--max-height` / `--max-width`), and drops an
    alpha channel if present. Returns an (M,N,3) uint8 array.
 
 2. `rgb_to_palette(rgb)` (`sixel.py`) — SIXEL supports at most 256 registers, so
