@@ -1,3 +1,59 @@
+def _fixed_cube():
+    '''The fallback palette: a fixed 5x9x5 RGB cube'''
+    import numpy as np
+    active = []
+    for r in range(0,257,64):
+        if r == 256:
+            r = 255
+        for g in range(0,257,32):
+            if g == 256:
+                g = 255
+            for b in range(0,257,64):
+                if b == 256:
+                    b = 255
+                active.append([r,g,b])
+    return np.array(active, dtype=np.int32)
+
+
+def _nearest(colours, active, max_elements=4*1024*1024):
+    '''Map each colour to the index of the nearest entry in active
+
+    Distances are squared Euclidean and ties are broken towards the lowest
+    index (as `argmin` does). The `|c|^2` term is dropped as it is constant
+    within a row and so does not affect which entry is closest, which leaves a
+    matrix product. Everything stays integral and well under 2**53, so float64
+    reproduces the exact integer distances.
+
+    The matrix is computed in chunks so that its size stays bounded no matter
+    how many distinct colours the image has.
+
+    Parameters
+    ----------
+    colours : ndarray
+        Shape (C,3)
+    active : ndarray
+        Shape (P,3)
+    max_elements : int, optional
+        Approximate upper bound on the number of elements in the temporary
+        distance matrix.
+
+    Returns
+    -------
+    lut : ndarray
+        Shape (C,) and dtype uint8
+    '''
+    import numpy as np
+    active = active.astype(np.float64)
+    sq_norm = (active**2).sum(1)
+    chunk = max(1, max_elements // max(1, len(active)))
+    lut = np.zeros(len(colours), dtype=np.uint8)
+    for start in range(0, len(colours), chunk):
+        block = colours[start:start + chunk].astype(np.float64)
+        dist = sq_norm[None,:] - 2 * (block @ active.T)
+        lut[start:start + chunk] = dist.argmin(1)
+    return lut
+
+
 def rgb_to_palette(rgb):
     '''Convert an RGB image to a palette image.
 
@@ -9,40 +65,30 @@ def rgb_to_palette(rgb):
     Returns
     -------
     active : ndarray
-        The active palette colours, with shape (P < 256,3) and dtype int8.
+        The active palette colours, with shape (P < 256,3) and dtype int32.
     res : ndarray
         The palette image, with shape (M,N) and dtype uint8.
     '''
     import numpy as np
-    from collections import Counter
-    cs = Counter([tuple(pix) for pix in rgb.reshape((-1,3))])
+    flat = rgb.reshape((-1,3)).astype(np.int32)
+    keys = (flat[:,0] << 16) | (flat[:,1] << 8) | flat[:,2]
+    ukeys, first, inverse, counts = np.unique(keys,
+                                              return_index=True,
+                                              return_inverse=True,
+                                              return_counts=True)
+    inverse = inverse.reshape(len(keys))
+    colours = np.stack([ukeys >> 16, (ukeys >> 8) & 0xff, ukeys & 0xff], axis=1)
 
-    colours = list(cs.keys())
-    colours.sort(key=lambda x: -cs[x])
-    active = np.array(colours[:255], dtype=np.int32)
+    # Most frequent first, ties broken by order of first appearance (lexsort
+    # sorts by the last key first)
+    order = np.lexsort((first, -counts))
+    active = colours[order[:255]]
     n_pixels = rgb.shape[0] * rgb.shape[1]
-    if sum(cs[tuple(c)] for c in active) < 0.5 * n_pixels:
-        active = []
-        for r in range(0,257,64):
-            if r == 256:
-                r = 255
-            for g in range(0,257,32):
-                if g == 256:
-                    g = 255
-                for b in range(0,257,64):
-                    if b == 256:
-                        b = 255
-                    active.append([r,g,b])
-        active = np.array(active, dtype=np.int32)
+    if counts[order[:255]].sum() < 0.5 * n_pixels:
+        active = _fixed_cube()
 
-    palette = {}
-    for c in colours:
-        palette[c] = ((active - c)**2).sum(1).argmin()
-
-    res = np.zeros(rgb.shape[:2], dtype=np.uint8)
-    for i in range(rgb.shape[0]):
-        for j in range(rgb.shape[1]):
-            res[i,j] = palette[tuple(rgb[i,j])]
+    lut = _nearest(colours, active)
+    res = lut[inverse].reshape(rgb.shape[:2])
     return active, res
 
 
