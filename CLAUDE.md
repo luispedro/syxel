@@ -6,11 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `syxel` is a small pure-Python package that writes images to the terminal using the
 [SIXEL](https://en.wikipedia.org/wiki/Sixel) escape-sequence protocol. It installs a
-single console script, `imcat`, which maps to `syxel.imcat:main`.
+console script, `imcat`, which maps to `syxel.imcat:main`, and a matplotlib backend
+(`syxel.backend_sixel`) that draws figures into the terminal.
 
 Runtime dependencies: `imread` (image loading) and `numpy` (used throughout, but
-currently only pulled in transitively via `imread`). All imports are done *inside*
-functions rather than at module top level.
+currently only pulled in transitively via `imread`). `matplotlib` is an optional
+extra, needed only for the backend. All imports are done *inside* functions rather
+than at module top level; `syxel/backend_sixel.py` is the one exception, because
+matplotlib looks up `FigureCanvas`, `FigureManager` and `show` as module attributes
+(numpy and `syxel.sixel` are still imported lazily there).
 
 ## Commands
 
@@ -19,12 +23,16 @@ pip install -e .        # install for development (entry point: imcat)
 imcat image.png         # render an image to a SIXEL-capable terminal
 imcat --help            # one or more files, plus --version/--max-height/--max-width
 pixi run -e test test   # run the test suite (pytest + hypothesis, in tests/)
+
+MPLBACKEND=module://syxel.backend_sixel python plot.py   # matplotlib in the terminal
 ```
 
-There is no linter config or CI in this repo. Beyond the tests, verification is manual:
-run `imcat` in a terminal that supports SIXEL (e.g. xterm with sixel enabled, foot,
-mlterm, WezTerm) and look at the output. To inspect the byte stream instead of
-rendering it, redirect stdout to a file — `main()` writes to `sys.stdout.buffer`.
+There is no linter config. CI (`.github/workflows/test.yml`) runs `python -m pytest`
+in the `test-py311` through `test-py314` pixi environments. Beyond the tests,
+verification is manual: run `imcat` in a terminal that supports SIXEL (e.g. xterm
+with sixel enabled, foot, mlterm, WezTerm) and look at the output. To inspect the
+byte stream instead of rendering it, redirect stdout to a file — `main()` writes to
+`sys.stdout.buffer`.
 
 ## Architecture
 
@@ -53,6 +61,15 @@ inside `main()`).
    six-pixel bitmask via a dot product with `[1,2,4,8,16,32]` plus 63. `$` returns
    the cursor to the start of the band for the next colour pass, `-` advances to
    the next band, and `\x1b\\` terminates.
+
+`syxel/backend_sixel.py` is a fourth entry point into stages 2 and 3: matplotlib's
+Agg backend replaces stage 1. `figure_to_rgb` renders a figure scaled to the
+terminal (queried with `TIOCGWINSZ`, overridable with `SYXEL_MAX_WIDTH` /
+`SYXEL_MAX_HEIGHT`) by temporarily adjusting the figure's dpi, and `write_figure`
+runs the rest of the pipeline. `FigureManagerSixel.show` writes to
+`sys.stdout.buffer`, while `FigureCanvasSixel.print_sixel` registers a `sixel`
+`savefig` format that renders at the figure's own size. The backend is exported with
+matplotlib's private `_Backend` class, which is the only supported way to define one.
 
 `syxel/syxel_version.py` holds `__version__`, read dynamically by `pyproject.toml`.
 

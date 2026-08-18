@@ -10,7 +10,8 @@ SIXEL in Python: display images directly in your terminal.
 them to standard output. If your terminal speaks SIXEL, the image appears inline,
 no image viewer required.
 
-It ships a single command line tool, `imcat`.
+It ships a command line tool, `imcat`, and a matplotlib backend, so that
+`plt.show()` draws your plots in the terminal.
 
 ## Installation
 
@@ -26,10 +27,17 @@ pip install -e .
 
 Requires Python 3.11 or later.
 
+To use the matplotlib backend, ask for the extra:
+
+```bash
+pip install '.[matplotlib]'
+```
+
 ### Dependencies
 
 - [imread](https://pypi.org/project/imread/) — image loading
 - [numpy](https://numpy.org/)
+- [matplotlib](https://matplotlib.org/) — optional, only for the backend
 
 ## Usage
 
@@ -76,6 +84,44 @@ stream instead of rendering it:
 imcat image.png > image.six
 ```
 
+## matplotlib backend
+
+`syxel.backend_sixel` is a matplotlib backend that draws figures into the terminal
+instead of opening a window. Select it from the environment:
+
+```bash
+MPLBACKEND=module://syxel.backend_sixel python plot.py
+```
+
+or from Python, before importing `pyplot`:
+
+```python
+import matplotlib
+matplotlib.use('module://syxel.backend_sixel')
+
+import matplotlib.pyplot as plt
+plt.plot([1, 4, 9])
+plt.show()                  # the figure appears in the terminal
+```
+
+With matplotlib 3.9 or later the short name `matplotlib.use('sixel')` also works,
+via an entry point.
+
+The figure is scaled to fill the terminal: its dpi is raised or lowered so that it
+fits the window, which redraws it at the right resolution rather than resampling
+it. Terminals that do not report their size in pixels (some multiplexers) fall
+back to 1200x800; set `SYXEL_MAX_WIDTH` and `SYXEL_MAX_HEIGHT` to override.
+
+`savefig` gains a `sixel` format, which writes at the figure's own size:
+
+```python
+fig.savefig('plot.sixel')                       # or
+fig.savefig(sys.stdout.buffer, format='sixel')
+```
+
+Each `plt.show()` prints the figures drawn so far and then drops them, so a script
+with several `show()` calls does not reprint earlier figures.
+
 ## Using it as a library
 
 The conversion is available directly, independently of the command line tool:
@@ -93,6 +139,14 @@ write_sixel(sys.stdout.buffer, data, active)
 `write_sixel` accepts any object with a `write` method taking bytes, so an
 `io.BytesIO` works for testing or for building the sequence in memory.
 
+The same is true of figures, without going through the backend machinery:
+
+```python
+from syxel.backend_sixel import write_figure
+
+write_figure(sys.stdout.buffer, fig)
+```
+
 ## How it works
 
 The pipeline has three stages:
@@ -109,7 +163,11 @@ The pipeline has three stages:
 
 3. **Emit** (`write_sixel`) — write the escape sequences. The image is processed
    in bands of six rows, with one pass per colour present in the band; each output
-   byte encodes one column's six-pixel bitmask.
+   byte encodes one column's six-pixel bitmask. A final band shorter than six rows
+   only sets the bits of the rows that exist.
+
+The matplotlib backend replaces the first stage: it renders the figure through Agg
+and hands the resulting pixels to the same last two stages.
 
 ## Development
 
