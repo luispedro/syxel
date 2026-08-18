@@ -18,3 +18,12 @@ imcat = "syxel.imcat:main"
 [tool.setuptools.dynamic]
 version = {attr = "syxel.syxel_version.__version__"}
 
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+syxel = { path = ".", editable = true }
+
+[tool.pixi.tasks]
