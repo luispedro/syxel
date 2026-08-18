@@ -18,8 +18,15 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = ["imread", "numpy"]
 
+[project.optional-dependencies]
+matplotlib = ["matplotlib>=3.6"]
+
 [project.entry-points."console_scripts"]
 imcat = "syxel.imcat:main"
+
+# Read by matplotlib 3.9 and above, which then accepts `matplotlib.use('sixel')`
+[project.entry-points."matplotlib.backend"]
+sixel = "syxel.backend_sixel"
 
 [tool.setuptools.dynamic]
 version = {attr = "syxel.syxel_version.__version__"}
@@ -37,6 +44,7 @@ syxel = { path = ".", editable = true }
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
 hypothesis = "*"
+matplotlib-base = "*"
 
 [tool.pixi.feature.test.tasks]
 test = "pytest"
