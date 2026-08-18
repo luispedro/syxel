@@ -47,8 +47,10 @@ inside `main()`).
 
 1. `load_image(ifname, max_height=800, max_width=1200)` (`imcat.py`) — reads with
    `imread`, then halves the image by simple `[::2,::2]` subsampling until it fits
-   within the limits (overridable with `--max-height` / `--max-width`), and drops an
-   alpha channel if present. Returns an (M,N,3) uint8 array.
+   within the limits (overridable with `--max-height` / `--max-width`), drops an
+   alpha channel if present, and rescales the dtype to uint8 (`_as_uint8`:
+   integer types from the full range of their dtype, floats clipped to [0, 1]).
+   Returns an (M,N,3) uint8 array.
 
 2. `rgb_to_palette(rgb)` (`sixel.py`) — SIXEL supports at most 256 registers, so
    the image must be quantized. The strategy is: count exact colours, take the 255

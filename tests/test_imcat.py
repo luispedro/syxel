@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from syxel.imcat import load_image, parse_args, main
+from syxel.imcat import _as_uint8, load_image, parse_args, main
 
 
 def test_defaults():
@@ -39,14 +39,16 @@ def test_informational_flags(flag):
     assert exc.value.code == 0
 
 
-def image_file(tmp_path, ndim=3):
+def image_file(tmp_path, ndim=3, dtype=np.uint8):
     imread = pytest.importorskip('imread')
     h, w = 24, 32
     y, x = np.mgrid[0:h,0:w]
     im = ((x * 8 + y) % 256).astype(np.uint8)
     if ndim == 3:
         im = np.stack([im, (im // 2), 255 - im], axis=2)
-    ofname = str(tmp_path / f'im{ndim}.png')
+    if dtype == np.uint16:
+        im = im.astype(np.uint16) * 257
+    ofname = str(tmp_path / f'im{ndim}-{np.dtype(dtype).name}.png')
     imread.imsave(ofname, im)
     return ofname
 
@@ -74,6 +76,52 @@ def test_main_writes_one_image_per_file(tmp_path, capsysbinary):
     # (or the shell prompt) does not land on top of it
     assert out.count(b'\x1b\\\n') == 2
     assert out.endswith(b'\x1b\\\n')
+
+
+@pytest.mark.parametrize('dtype,top', [
+                            (np.uint16, 65535),
+                            (np.uint32, 2**32 - 1),
+                            (np.int16, 2**15 - 1),
+                            ])
+def test_as_uint8_integer(dtype, top):
+    data = np.array([[0, top // 255, top // 2, top]], dtype=dtype)
+    converted = _as_uint8(data)
+    assert converted.dtype == np.uint8
+    assert converted[0,0] == 0
+    assert converted[0,1] == 1
+    assert converted[0,-1] == 255
+    # top // 2 is just under the midpoint, so it rounds down
+    assert converted[0,2] == 127
+
+
+def test_as_uint8_passes_uint8_through():
+    data = np.array([[0, 17, 255]], dtype=np.uint8)
+    assert _as_uint8(data) is data
+
+
+def test_as_uint8_clips_negatives():
+    data = np.array([[-32768, 0, 32767]], dtype=np.int16)
+    assert list(_as_uint8(data)[0]) == [0, 0, 255]
+
+
+def test_as_uint8_float():
+    data = np.array([[-1., 0., 0.5, 1., 2.]])
+    converted = _as_uint8(data)
+    assert converted.dtype == np.uint8
+    assert list(converted[0]) == [0, 0, 128, 255, 255]
+
+
+def test_as_uint8_bool():
+    assert list(_as_uint8(np.array([[False, True]]))[0]) == [0, 255]
+
+
+def test_load_image_16_bit(tmp_path):
+    ifname = image_file(tmp_path, dtype=np.uint16)
+    data = load_image(ifname)
+    assert data.dtype == np.uint8
+    assert data.shape == (24, 32, 3)
+    # The values must be the 8-bit originals back again, not truncated ones
+    assert np.array_equal(data, load_image(image_file(tmp_path)))
 
 
 def test_load_image_without_imread(tmp_path, monkeypatch):

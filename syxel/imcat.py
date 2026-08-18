@@ -1,11 +1,31 @@
+def _as_uint8(data):
+    '''Rescale an image array to uint8.
+
+    Integer types are rescaled from the full range of their dtype (so a uint16
+    65535 becomes 255) and floating point ones are assumed to lie in [0, 1] and
+    are clipped to it. Negative values are clipped away.
+    '''
+    import numpy as np
+    if data.dtype == np.uint8:
+        return data
+    if data.dtype == bool:
+        return data.astype(np.uint8) * 255
+    if np.issubdtype(data.dtype, np.integer):
+        top = np.iinfo(data.dtype).max
+    else:
+        top = 1.
+    return (data.clip(0, top) * (255. / top)).round().astype(np.uint8)
+
+
 def load_image(ifname : str, max_height : int = 800, max_width : int = 1200):
     '''Load an image from a file.
 
     The image is halved by subsampling until it fits within
     `max_height` x `max_width`.
 
-    The result is always RGB: greyscale images are expanded to three channels
-    and an alpha channel, if present, is dropped.
+    The result is always RGB uint8: greyscale images are expanded to three
+    channels, an alpha channel, if present, is dropped, and other dtypes are
+    rescaled to 0-255 (see `_as_uint8`).
     '''
 
     import numpy as np
@@ -19,6 +39,7 @@ def load_image(ifname : str, max_height : int = 800, max_width : int = 1200):
     data = im.imread(ifname)
     while data.shape[0] > max_height or data.shape[1] > max_width:
         data = data[::2,::2]
+    data = _as_uint8(data)
     if data.ndim == 2:
         data = data[:,:,None]
     if data.shape[2] in (2, 4):
