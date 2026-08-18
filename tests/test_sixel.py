@@ -1,9 +1,12 @@
+import io
+import re
+
 import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 from hypothesis.extra import numpy as hnp
 
-from syxel.sixel import rgb_to_palette
+from syxel.sixel import rgb_to_palette, write_sixel
 
 # The fixed fallback cube in rgb_to_palette is 5 x 9 x 5
 CUBE_SIZE = 5 * 9 * 5
@@ -219,3 +222,119 @@ def test_fast_matches_slow_on_few_colour_images(rgb):
                                       st.just(3))))
 def test_fast_matches_slow_on_arbitrary_images(rgb):
     assert_same_as_slow(rgb)
+
+
+
+def decode_sixel(out):
+    '''A minimal decoder for the subset of SIXEL that `write_sixel` emits
+
+    Returns the palette image, with -1 wherever no colour was ever set.
+    '''
+    prefix = b'\x1bP0;0;0q"1;1;'
+    assert out.startswith(prefix)
+    assert out.endswith(b'\x1b\\')
+    body = out[len(prefix):-2].decode('ascii')
+
+    size = re.match(r'(\d+);(\d+)', body)
+    width, height = int(size.group(1)), int(size.group(2))
+    res = np.full((height, width), -1, np.int64)
+
+    colour = None
+    x = y = 0
+    i = size.end()
+    while i < len(body):
+        ch = body[i]
+        if ch == '#':
+            # `#n;2;r;g;b` defines a register, a bare `#n` selects one
+            token = re.match(r'#(\d+)(;2;\d+;\d+;\d+)?', body[i:])
+            if token.group(2) is None:
+                colour = int(token.group(1))
+                x = 0
+            i += token.end()
+        elif ch == '$':
+            x = 0
+            i += 1
+        elif ch == '-':
+            y += 6
+            x = 0
+            i += 1
+        else:
+            bits = ord(ch) - 63
+            for row in range(6):
+                if bits & (1 << row):
+                    res[y + row, x] = colour
+            x += 1
+            i += 1
+    return res
+
+
+def encode(data, active):
+    '''Run `write_sixel` into memory and return the bytes'''
+    out = io.BytesIO()
+    write_sixel(out, np.asarray(data, np.uint8), np.asarray(active, np.int32))
+    return out.getvalue()
+
+
+def test_write_sixel_header_and_terminator():
+    data = np.zeros((12, 20), np.uint8)
+
+    out = encode(data, [[255, 0, 0]])
+
+    # Raster attributes are `"1;1;<width>;<height>`
+    assert out.startswith(b'\x1bP0;0;0q"1;1;20;12#')
+    assert out.endswith(b'\x1b\\')
+
+
+def test_write_sixel_rescales_the_palette():
+    '''SIXEL colour components run from 0 to 100, not from 0 to 255'''
+    out = encode(np.zeros((6, 1), np.uint8), [[255, 0, 128]])
+
+    assert b'#0;2;100;0;50' in out
+
+
+@pytest.mark.parametrize('height', [1, 5, 6, 7, 12, 13])
+def test_write_sixel_emits_every_band(height):
+    '''Bands are six rows tall; a short final band must still be written'''
+    data = np.zeros((height, 4), np.uint8)
+
+    out = encode(data, [[0, 0, 0]])
+
+    assert out.count(b'-') == -(-height // 6)
+    assert f';4;{height}'.encode('ascii') in out
+
+
+@pytest.mark.parametrize('height,expected', [
+                            (1, 1),
+                            (4, 1 + 2 + 4 + 8),
+                            (6, 1 + 2 + 4 + 8 + 16 + 32),
+                            ])
+def test_write_sixel_sets_only_the_rows_that_exist(height, expected):
+    '''A short band sets the bits of its own rows and no others'''
+    data = np.zeros((height, 1), np.uint8)
+
+    out = encode(data, [[10, 20, 30]])
+    body = out[out.index(b'#0;2;'):]
+    pixels = body[body.index(b'#0', 1) + 2:body.index(b'-')]
+
+    assert pixels == bytes([63 + expected])
+
+
+def test_write_sixel_one_pass_per_colour_in_a_band():
+    '''Passes over the same band are separated by `$`, bands by `-`'''
+    data = np.zeros((6, 2), np.uint8)
+    data[:, 1] = 1
+
+    out = encode(data, [[0, 0, 0], [255, 255, 255]])
+    bands = out[out.index(b'#1;2;'):].split(b'-')[0]
+
+    assert bands.count(b'$') == 1
+
+
+def test_write_sixel_round_trips_a_quantized_image():
+    '''The whole pipeline, decoded back into an image'''
+    rgb = np.zeros((10, 8, 3), np.uint8)
+    rgb[:5] = [200, 100, 0]
+    rgb[5:] = [0, 100, 200]
+
+    active, data = rgb_to_palette(rgb)
+    assert np.array_equal(decode_sixel(encode(data, active)), data)
