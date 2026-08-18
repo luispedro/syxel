@@ -844,4 +844,5 @@ packages:
   name: syxel
   requires_dist:
   - imread
-  requires_python: '>=3.7'
+  - numpy
+  requires_python: '>=3.11'

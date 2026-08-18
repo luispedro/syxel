@@ -1,16 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "syxel"
 dynamic = ["version"]
 description = "SIXEL in Python"
+readme = "README.md"
+license = "MIT"
+license-files = ["COPYING.MIT"]
 authors = [{name = "Luis Pedro Coelho", email = "luis@luispedro.org"}]
 classifiers = [
     "Environment :: Console",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-requires-python = ">=3.7"
-dependencies = ["imread"]
+requires-python = ">=3.11"
+dependencies = ["imread", "numpy"]
 
 [project.entry-points."console_scripts"]
 imcat = "syxel.imcat:main"
