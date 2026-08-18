@@ -93,6 +93,17 @@ def rgb_to_palette(rgb):
 
 
 def write_sixel(out, data, active):
+    '''Write a palette image to `out` as a SIXEL escape sequence.
+
+    Parameters
+    ----------
+    out : file-like
+        Opened for writing in binary mode (anything with a bytes `write`).
+    data : ndarray
+        The palette image, with shape (M,N) and dtype uint8.
+    active : ndarray
+        The active palette colours, with shape (P,3) and values in 0-255.
+    '''
     import numpy as np
     active = active.astype(np.int32) * 100 // 255
     w, h = data.shape
@@ -104,12 +115,16 @@ def write_sixel(out, data, active):
         # 2 is for RGB
         out.write(f'#{i};2;{active[i,0]:};{active[i,1]:};{active[i,2]:}'.encode('ascii'))
 
-    for i in range(data.shape[0]//6):
+    for i in range(-(-data.shape[0]//6)):
         sel = data[i*6:(i+1)*6]
+        # The last band can be short, in which case only the bits for the rows
+        # that exist are set (the raster attributes above already declare the
+        # true height, so the terminal does not draw the missing rows)
+        weights = np.array([1,2,4,8,16,32])[:len(sel)]
         is_first = True
         for c in set(sel.ravel()):
             to_write = (sel == c).astype(np.int32)
-            to_write = np.dot(to_write.T, np.array([1,2,4,8,16,32])) + 63
+            to_write = np.dot(to_write.T, weights) + 63
             if not is_first:
                 out.write(b'$')
             is_first = False
