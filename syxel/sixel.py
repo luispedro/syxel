@@ -151,16 +151,17 @@ def write_sixel(out, data, active):
     '''
     import numpy as np
     active = active.astype(np.int32) * 100 // 255
-    w, h = data.shape
+    height, width = data.shape
     sixel_header = b'\x1bP0;0;0q"1;1;'
     out.write(sixel_header)
 
-    out.write(f'{h};{w}'.encode('ascii'))
+    # Raster attributes are `Ph;Pv`, i.e. width before height
+    out.write(f'{width};{height}'.encode('ascii'))
     for i in range(len(active)):
         # 2 is for RGB
         out.write(f'#{i};2;{active[i,0]:};{active[i,1]:};{active[i,2]:}'.encode('ascii'))
 
-    for i in range(-(-data.shape[0]//6)):
+    for i in range(-(-height//6)):
         sel = data[i*6:(i+1)*6]
         # The last band can be short, in which case only the bits for the rows
         # that exist are set (the raster attributes above already declare the
