@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 from hypothesis.extra import numpy as hnp
 
-from syxel.sixel import rgb_to_palette, write_sixel
+from syxel.sixel import _rle, rgb_to_palette, write_sixel
 
 # The fixed fallback cube in rgb_to_palette is 5 x 9 x 5
 CUBE_SIZE = 5 * 9 * 5
@@ -225,6 +225,55 @@ def test_fast_matches_slow_on_arbitrary_images(rgb):
 
 
 
+def sixels(*values):
+    return np.array(values, np.uint8)
+
+
+def test_rle_keeps_short_runs_literal():
+    '''`!3A` is no shorter than `AAA`, so it is not worth the introducer'''
+    assert _rle(sixels(65, 65, 65, 66)) == b'AAAB'
+
+
+def test_rle_repeats_long_runs():
+    assert _rle(sixels(*([65] * 10 + [66] * 4))) == b'!10A!4B'
+
+
+def test_rle_drops_trailing_empty_sixels():
+    '''A trailing `?` sets no pixel; the cursor is reset by `$`/`-` anyway'''
+    assert _rle(sixels(65, 63, 63, 63, 63, 63)) == b'A'
+    assert _rle(sixels(63, 63, 65, 63, 63)) == b'??A'
+
+
+def test_rle_of_an_empty_pass():
+    assert _rle(sixels(63, 63, 63)) == b''
+    assert _rle(sixels()) == b''
+
+
+def test_rle_splits_runs_that_are_too_long_to_repeat():
+    '''Repeat counts stay within 255, which every terminal accepts'''
+    assert _rle(sixels(*([65] * 260))) == b'!255A!5A'
+
+
+@settings(max_examples=100, deadline=None)
+@given(hnp.arrays(np.uint8, st.integers(1, 40),
+                  elements=st.integers(63, 126)))
+def test_rle_decodes_back_to_the_band(band):
+    decoded = []
+    i = 0
+    encoded = _rle(band)
+    while i < len(encoded):
+        repeat = 1
+        if encoded[i] == ord('!'):
+            token = re.match(rb'!(\d+)', encoded[i:])
+            repeat = int(token.group(1))
+            i += token.end()
+        decoded.extend([encoded[i]] * repeat)
+        i += 1
+    # Only trailing empty sixels may be missing
+    decoded.extend([63] * (len(band) - len(decoded)))
+    assert np.array_equal(decoded, band)
+
+
 def decode_sixel(out):
     '''A minimal decoder for the subset of SIXEL that `write_sixel` emits
 
@@ -259,11 +308,18 @@ def decode_sixel(out):
             x = 0
             i += 1
         else:
+            # `!n` repeats the byte that follows it n times
+            repeat = 1
+            if ch == '!':
+                token = re.match(r'!(\d+)', body[i:])
+                repeat = int(token.group(1))
+                i += token.end()
+                ch = body[i]
             bits = ord(ch) - 63
             for row in range(6):
                 if bits & (1 << row):
-                    res[y + row, x] = colour
-            x += 1
+                    res[y + row, x:x + repeat] = colour
+            x += repeat
             i += 1
     return res
 
@@ -338,3 +394,22 @@ def test_write_sixel_round_trips_a_quantized_image():
 
     active, data = rgb_to_palette(rgb)
     assert np.array_equal(decode_sixel(encode(data, active)), data)
+
+
+def test_write_sixel_run_length_encodes_flat_rows():
+    data = np.zeros((6, 40), np.uint8)
+
+    out = encode(data, [[0, 0, 0]])
+
+    assert b'!40~' in out
+
+
+def test_write_sixel_round_trips_a_flat_image_much_more_cheaply():
+    '''Large flat regions are what RLE is for'''
+    data = np.zeros((60, 200), np.uint8)
+    data[:, 100:] = 1
+
+    out = encode(data, [[200, 100, 0], [0, 100, 200]])
+
+    assert np.array_equal(decode_sixel(out), data)
+    assert len(out) < data.size // 10

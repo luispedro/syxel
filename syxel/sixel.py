@@ -54,6 +54,51 @@ def _nearest(colours, active, max_elements=4*1024*1024):
     return lut
 
 
+# Some terminals only accept repeat counts up to 255, so long runs are split
+_MAX_REPEAT = 255
+
+
+def _rle(band):
+    '''Run-length encode one colour pass over a band
+
+    Trailing empty sixels are dropped (they set no pixel, and the cursor is
+    reset by the `$`/`-` that follows anyway) and each remaining run of equal
+    bytes is written as `!<n><byte>` whenever that is shorter than repeating
+    the byte.
+
+    Parameters
+    ----------
+    band : ndarray
+        Shape (N,) and dtype uint8, one sixel byte per column.
+
+    Returns
+    -------
+    encoded : bytes
+    '''
+    import numpy as np
+    nonempty = np.flatnonzero(band != 63)
+    if not len(nonempty):
+        return b''
+    band = band[:nonempty[-1] + 1]
+
+    starts = np.flatnonzero(np.concatenate([[True], band[1:] != band[:-1]]))
+    lengths = np.diff(np.concatenate([starts, [len(band)]]))
+
+    parts = []
+    for value, n in zip(band[starts].tolist(), lengths.tolist()):
+        ch = bytes([value])
+        while n > 0:
+            k = min(n, _MAX_REPEAT)
+            n -= k
+            # `!<k><byte>` costs 2 bytes plus the digits of k, so it only
+            # pays off for runs longer than that
+            if k > len(str(k)) + 2:
+                parts.append(b'!%d%s' % (k, ch))
+            else:
+                parts.append(ch * k)
+    return b''.join(parts)
+
+
 def rgb_to_palette(rgb):
     '''Convert an RGB image to a palette image.
 
@@ -129,8 +174,6 @@ def write_sixel(out, data, active):
                 out.write(b'$')
             is_first = False
             out.write(f'#{c}'.encode('ascii'))
-            to_write = to_write.astype(np.uint8)
-            to_write = to_write.tobytes()
-            out.write(to_write)
+            out.write(_rle(to_write.astype(np.uint8)))
         out.write(b'-')
     out.write(b'\x1b\\')  # End of Sixel

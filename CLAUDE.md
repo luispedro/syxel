@@ -58,9 +58,11 @@ inside `main()`).
    Palette values are rescaled from 0-255 to the SIXEL 0-100 range. The image is
    processed in bands of six rows; within each band, one pass is emitted per colour
    present (`#<n>` selects the register), where each output byte encodes a column's
-   six-pixel bitmask via a dot product with `[1,2,4,8,16,32]` plus 63. `$` returns
-   the cursor to the start of the band for the next colour pass, `-` advances to
-   the next band, and `\x1b\\` terminates.
+   six-pixel bitmask via a dot product with `[1,2,4,8,16,32]` plus 63. Each pass is
+   then run-length encoded by `_rle`, which drops trailing empty sixels and writes
+   runs as `!<n><byte>` when that is shorter (repeat counts capped at 255). `$`
+   returns the cursor to the start of the band for the next colour pass, `-`
+   advances to the next band, and `\x1b\\` terminates.
 
 `syxel/backend_sixel.py` is a fourth entry point into stages 2 and 3: matplotlib's
 Agg backend replaces stage 1. `figure_to_rgb` renders a figure scaled to the
