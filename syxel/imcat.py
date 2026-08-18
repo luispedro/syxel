@@ -9,7 +9,13 @@ def load_image(ifname : str, max_height : int = 800, max_width : int = 1200):
     '''
 
     import numpy as np
-    import imread as im
+    try:
+        import imread as im
+    except ImportError:
+        raise ImportError(
+            'Loading image files requires the imread package, which is an '
+            'optional dependency of syxel: install it with '
+            '`pip install "syxel[imcat]"` (or `pip install imread`).')
     data = im.imread(ifname)
     while data.shape[0] > max_height or data.shape[1] > max_width:
         data = data[::2,::2]

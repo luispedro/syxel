@@ -9,20 +9,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 console script, `imcat`, which maps to `syxel.imcat:main`, and a matplotlib backend
 (`syxel.backend_sixel`) that draws figures into the terminal.
 
-Runtime dependencies: `imread` (image loading) and `numpy` (used throughout, but
-currently only pulled in transitively via `imread`). `matplotlib` is an optional
-extra, needed only for the backend. All imports are done *inside* functions rather
-than at module top level; `syxel/backend_sixel.py` is the one exception, because
-matplotlib looks up `FigureCanvas`, `FigureManager` and `show` as module attributes
-(numpy and `syxel.sixel` are still imported lazily there).
+The only hard runtime dependency is `numpy`. `imread` (image loading, needed by
+`load_image` and hence by the `imcat` command) and `matplotlib` (the backend) are
+optional extras, `syxel[imcat]` and `syxel[matplotlib]`; `load_image` turns a
+missing `imread` into an `ImportError` naming the extra.
+
+All imports are done *inside* functions rather than at module top level;
+`syxel/backend_sixel.py` is the one exception, because matplotlib looks up
+`FigureCanvas`, `FigureManager` and `show` as module attributes (numpy and
+`syxel.sixel` are still imported lazily there).
 
 ## Commands
 
 ```bash
-pip install -e .        # install for development (entry point: imcat)
-imcat image.png         # render an image to a SIXEL-capable terminal
-imcat --help            # one or more files, plus --version/--max-height/--max-width
-pixi run -e test test   # run the test suite (pytest + hypothesis, in tests/)
+pip install -e '.[imcat]'    # install for development (entry point: imcat)
+imcat image.png              # render an image to a SIXEL-capable terminal
+imcat --help                 # one or more files, plus --version/--max-height/--max-width
+pixi run -e test test        # run the test suite (pytest + hypothesis, in tests/)
 
 MPLBACKEND=module://syxel.backend_sixel python plot.py   # matplotlib in the terminal
 ```

@@ -27,17 +27,23 @@ pip install -e .
 
 Requires Python 3.11 or later.
 
-To use the matplotlib backend, ask for the extra:
+The base install only depends on numpy, which is enough to convert arrays (or
+matplotlib figures) to SIXEL. Reading image files and the matplotlib backend each
+come as an extra:
 
 ```bash
-pip install '.[matplotlib]'
+pip install '.[imcat]'         # the imcat command line tool
+pip install '.[matplotlib]'    # the matplotlib backend
+pip install '.[imcat,matplotlib]'
 ```
 
 ### Dependencies
 
-- [imread](https://pypi.org/project/imread/) — image loading
 - [numpy](https://numpy.org/)
-- [matplotlib](https://matplotlib.org/) — optional, only for the backend
+- [imread](https://pypi.org/project/imread/) — optional (`imcat` extra), image
+  loading for the command line tool
+- [matplotlib](https://matplotlib.org/) — optional (`matplotlib` extra), only for
+  the backend
 
 ## Usage
 

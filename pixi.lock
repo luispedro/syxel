@@ -2778,7 +2778,7 @@ packages:
 - pypi: ./
   name: syxel
   requires_dist:
-  - imread
   - numpy
+  - imread ; extra == 'imcat'
   - matplotlib>=3.6 ; extra == 'matplotlib'
   requires_python: '>=3.11'

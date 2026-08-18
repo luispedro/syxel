@@ -74,3 +74,16 @@ def test_main_writes_one_image_per_file(tmp_path, capsysbinary):
     # (or the shell prompt) does not land on top of it
     assert out.count(b'\x1b\\\n') == 2
     assert out.endswith(b'\x1b\\\n')
+
+
+def test_load_image_without_imread(tmp_path, monkeypatch):
+    # imread is an optional dependency, so the failure must point at the extra
+    import builtins
+    real_import = builtins.__import__
+    def no_imread(name, *args, **kwargs):
+        if name == 'imread':
+            raise ImportError('No module named imread')
+        return real_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', no_imread)
+    with pytest.raises(ImportError, match=r'syxel\[imcat\]'):
+        load_image(str(tmp_path / 'nonexistent.png'))
