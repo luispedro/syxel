@@ -20,7 +20,8 @@ def rgb_to_palette(rgb):
     colours = list(cs.keys())
     colours.sort(key=lambda x: -cs[x])
     active = np.array(colours[:255], dtype=np.int32)
-    if sum(cs[tuple(c)] for c in active) < 0.5 * rgb.size:
+    n_pixels = rgb.shape[0] * rgb.shape[1]
+    if sum(cs[tuple(c)] for c in active) < 0.5 * n_pixels:
         active = []
         for r in range(0,257,64):
             if r == 256:
