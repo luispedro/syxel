@@ -1,16 +1,41 @@
-def _fixed_cube():
-    '''The fallback palette: a fixed 5x9x5 RGB cube'''
+# The number of colour registers assumed when the terminal is not asked, or
+# does not answer. 256 is what current SIXEL terminals provide; the palette
+# path has always used 255 of them.
+DEFAULT_COLOURS = 255
+
+
+def _cube_size(n):
+    '''The number of colours in the n x (2n-1) x n cube'''
+    return n * n * (2 * n - 1)
+
+
+def _levels(n):
+    '''`n` levels spanning 0-255, ending at 255'''
+    step = -(-256 // (n - 1))
+    return [min(i * step, 255) for i in range(n)]
+
+
+def _fixed_cube(max_colours=DEFAULT_COLOURS):
+    '''The fallback palette: the largest RGB cube that fits in `max_colours`
+
+    Green gets about twice as many levels as red and blue, which is where the
+    eye resolves most detail, so the cube is n x (2n-1) x n: 5 x 9 x 5 = 225
+    colours for the 255 registers assumed by default, and up to 8 x 15 x 8 =
+    960 for the 1024 that xterm can be configured with.
+    '''
     import numpy as np
+    n = 2
+    while _cube_size(n + 1) <= max_colours:
+        n += 1
+    if _cube_size(n) > max_colours:
+        # Fewer registers than even the smallest cube (2 x 3 x 2 = 12): a grey
+        # ramp is the best that a fixed palette can do
+        greys = np.linspace(0, 255, max_colours).round().astype(np.int32)
+        return np.repeat(greys[:,None], 3, axis=1)
     active = []
-    for r in range(0,257,64):
-        if r == 256:
-            r = 255
-        for g in range(0,257,32):
-            if g == 256:
-                g = 255
-            for b in range(0,257,64):
-                if b == 256:
-                    b = 255
+    for r in _levels(n):
+        for g in _levels(2 * n - 1):
+            for b in _levels(n):
                 active.append([r,g,b])
     return np.array(active, dtype=np.int32)
 
@@ -40,13 +65,15 @@ def _nearest(colours, active, max_elements=4*1024*1024):
     Returns
     -------
     lut : ndarray
-        Shape (C,) and dtype uint8
+        Shape (C,) and dtype uint8, or uint16 if `active` has more than 256
+        entries
     '''
     import numpy as np
     active = active.astype(np.float64)
     sq_norm = (active**2).sum(1)
     chunk = max(1, max_elements // max(1, len(active)))
-    lut = np.zeros(len(colours), dtype=np.uint8)
+    dtype = np.uint8 if len(active) <= 256 else np.uint16
+    lut = np.zeros(len(colours), dtype=dtype)
     for start in range(0, len(colours), chunk):
         block = colours[start:start + chunk].astype(np.float64)
         dist = sq_norm[None,:] - 2 * (block @ active.T)
@@ -99,22 +126,30 @@ def _rle(band):
     return b''.join(parts)
 
 
-def rgb_to_palette(rgb):
+def rgb_to_palette(rgb, max_colours=None):
     '''Convert an RGB image to a palette image.
 
     Parameters
     ----------
     rgb : ndarray
         An image with shape (M,N,3) and dtype uint8.
+    max_colours : int, optional
+        How many colour registers the terminal has to spare (default:
+        `DEFAULT_COLOURS`). `syxel.terminal.colour_registers()` asks the
+        terminal for it.
 
     Returns
     -------
     active : ndarray
-        The active palette colours, with shape (P < 256,3) and dtype int32.
+        The active palette colours, with shape (P <= max_colours,3) and dtype
+        int32.
     res : ndarray
-        The palette image, with shape (M,N) and dtype uint8.
+        The palette image, with shape (M,N) and dtype uint8, or uint16 if the
+        palette has more than 256 entries.
     '''
     import numpy as np
+    if max_colours is None:
+        max_colours = DEFAULT_COLOURS
     flat = rgb.reshape((-1,3)).astype(np.int32)
     keys = (flat[:,0] << 16) | (flat[:,1] << 8) | flat[:,2]
     ukeys, first, inverse, counts = np.unique(keys,
@@ -127,10 +162,10 @@ def rgb_to_palette(rgb):
     # Most frequent first, ties broken by order of first appearance (lexsort
     # sorts by the last key first)
     order = np.lexsort((first, -counts))
-    active = colours[order[:255]]
+    active = colours[order[:max_colours]]
     n_pixels = rgb.shape[0] * rgb.shape[1]
-    if counts[order[:255]].sum() < 0.5 * n_pixels:
-        active = _fixed_cube()
+    if counts[order[:max_colours]].sum() < 0.5 * n_pixels:
+        active = _fixed_cube(max_colours)
 
     lut = _nearest(colours, active)
     res = lut[inverse].reshape(rgb.shape[:2])
@@ -145,7 +180,7 @@ def write_sixel(out, data, active):
     out : file-like
         Opened for writing in binary mode (anything with a bytes `write`).
     data : ndarray
-        The palette image, with shape (M,N) and dtype uint8.
+        The palette image, with shape (M,N) and an unsigned integer dtype.
     active : ndarray
         The active palette colours, with shape (P,3) and values in 0-255.
     '''

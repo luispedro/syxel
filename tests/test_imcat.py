@@ -8,6 +8,8 @@ def test_defaults():
     args = parse_args(['image.png'])
     assert args.images == ['image.png']
     assert (args.max_height, args.max_width) == (800, 1200)
+    # None means "whatever the terminal says it has room for"
+    assert args.max_colours is None
 
 
 def test_multiple_files():
@@ -19,11 +21,19 @@ def test_size_override():
     assert (args.max_height, args.max_width) == (100, 200)
 
 
+@pytest.mark.parametrize('flag', ['--max-colours', '--max-colors'])
+def test_colour_override_is_spelled_either_way(flag):
+    assert parse_args(['a.png', flag, '1024']).max_colours == 1024
+
+
 @pytest.mark.parametrize('argv', [
                             [],
                             ['a.png', '--max-height', '0'],
                             ['a.png', '--max-width', '-1'],
                             ['a.png', '--max-height', 'wide'],
+                            ['a.png', '--max-colours', '0'],
+                            ['a.png', '--max-colours', '-8'],
+                            ['a.png', '--max-colours', '1000000000'],
                             ])
 def test_bad_arguments(argv):
     # argparse exits with status 2 on a usage error rather than raising
@@ -76,6 +86,32 @@ def test_main_writes_one_image_per_file(tmp_path, capsysbinary):
     # (or the shell prompt) does not land on top of it
     assert out.count(b'\x1b\\\n') == 2
     assert out.endswith(b'\x1b\\\n')
+
+
+def test_main_quantizes_to_the_colours_asked_for(tmp_path, capsysbinary):
+    import re
+    ifname = image_file(tmp_path)
+
+    main([ifname, '--max-colours', '16'])
+
+    out = capsysbinary.readouterr().out
+    # `#n;2;r;g;b` defines a register; the image has far more colours than this
+    assert len(re.findall(rb'#\d+;2;', out)) <= 16
+
+
+def test_main_asks_the_terminal_how_many_colours_it_has(tmp_path,
+                                                        capsysbinary,
+                                                        monkeypatch):
+    import re
+    from syxel import terminal
+    ifname = image_file(tmp_path)
+    monkeypatch.setattr(terminal, '_queried', terminal._UNKNOWN)
+    monkeypatch.setattr(terminal, '_query_colour_registers', lambda: 32)
+
+    main([ifname])
+
+    out = capsysbinary.readouterr().out
+    assert len(re.findall(rb'#\d+;2;', out)) <= 32
 
 
 @pytest.mark.parametrize('dtype,top', [

@@ -53,6 +53,7 @@ def parse_args(argv=None):
     '''Parse the command line arguments (`sys.argv[1:]` if argv is None)'''
     import argparse
     from syxel.syxel_version import __version__
+    from syxel.terminal import MAX_COLOURS
 
     parser = argparse.ArgumentParser(
             prog='imcat',
@@ -65,16 +66,27 @@ def parse_args(argv=None):
                         help='subsample until the image is at most N pixels high (default: %(default)s)')
     parser.add_argument('--max-width', type=int, default=1200, metavar='N',
                         help='subsample until the image is at most N pixels wide (default: %(default)s)')
+    parser.add_argument('--max-colours', '--max-colors', type=int, default=None,
+                        metavar='N', dest='max_colours',
+                        help='quantize to at most N colours (default: ask the '
+                             'terminal how many colour registers it has, and '
+                             'assume 255 if it does not say)')
     args = parser.parse_args(argv)
     if args.max_height < 1 or args.max_width < 1:
         parser.error('--max-height and --max-width must be positive')
+    if args.max_colours is not None and not 1 <= args.max_colours <= MAX_COLOURS:
+        parser.error(f'--max-colours must be between 1 and {MAX_COLOURS}')
     return args
 
 
 def main(argv=None):
     import sys
     from syxel.sixel import rgb_to_palette, write_sixel
+    from syxel.terminal import colour_registers
     args = parse_args(argv)
+    max_colours = args.max_colours
+    if max_colours is None:
+        max_colours = colour_registers()
     out = sys.stdout.buffer
     status = 0
     for ifname in args.images:
@@ -96,7 +108,7 @@ def main(argv=None):
             print(f'imcat: {message}', file=sys.stderr)
             status = 1
             continue
-        active, data = rgb_to_palette(rgb)
+        active, data = rgb_to_palette(rgb, max_colours=max_colours)
         write_sixel(out, data, active)
         # Otherwise the shell prompt (or the next image) lands on top of this one
         out.write(b'\n')

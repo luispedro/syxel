@@ -139,7 +139,7 @@ def _flatten_onto_white(rgba):
     return ((flat + flat // 255) // 256).astype(np.uint8)
 
 
-def write_figure(out, figure, max_width=None, max_height=None):
+def write_figure(out, figure, max_width=None, max_height=None, max_colours=None):
     '''Write a matplotlib figure to `out` as a SIXEL escape sequence
 
     Parameters
@@ -149,10 +149,16 @@ def write_figure(out, figure, max_width=None, max_height=None):
     figure : matplotlib.figure.Figure
     max_width, max_height : int, optional
         The box to fit into, in pixels (default: `target_size()`)
+    max_colours : int, optional
+        How many colours to quantize to (default:
+        `syxel.terminal.colour_registers()`)
     '''
     from syxel.sixel import rgb_to_palette, write_sixel
+    from syxel.terminal import colour_registers
     rgb = figure_to_rgb(figure, max_width=max_width, max_height=max_height)
-    active, data = rgb_to_palette(rgb)
+    if max_colours is None:
+        max_colours = colour_registers()
+    active, data = rgb_to_palette(rgb, max_colours=max_colours)
     write_sixel(out, data, active)
 
 
@@ -173,18 +179,23 @@ class FigureCanvasSixel(FigureCanvasAgg):
     filetypes = {**FigureCanvasAgg.filetypes,
                  'sixel': 'SIXEL terminal graphics'}
 
-    def print_sixel(self, filename_or_obj, **kwargs):
+    def print_sixel(self, filename_or_obj, max_colours=None, **kwargs):
         '''Write the figure at its own size, for `savefig`
 
         Unlike `show`, this does not scale to the terminal: `savefig` is
-        expected to honour the figure's `figsize` and `dpi`.
+        expected to honour the figure's `figsize` and `dpi`. The palette still
+        comes from the terminal, because a figure has nothing to say about how
+        many colour registers there are; pass `max_colours` to pin it.
         '''
         from matplotlib import cbook
         from syxel.sixel import rgb_to_palette, write_sixel
+        from syxel.terminal import colour_registers
         import numpy as np
         FigureCanvasAgg.draw(self)
         rgb = _flatten_onto_white(np.asarray(self.buffer_rgba()))
-        active, data = rgb_to_palette(rgb)
+        if max_colours is None:
+            max_colours = colour_registers()
+        active, data = rgb_to_palette(rgb, max_colours=max_colours)
         with cbook.open_file_cm(filename_or_obj, 'wb') as fh:
             write_sixel(fh, data, active)
 

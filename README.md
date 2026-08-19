@@ -72,12 +72,26 @@ Override the limits with:
 imcat --max-height 400 --max-width 600 image.png
 ```
 
+How many colours the image is quantized to is the terminal's business: SIXEL
+draws from a palette of colour registers, and terminals differ in how many they
+provide (16 on the original DEC VT340, 256 by default today, up to 1024 for
+`xterm` configured with `numColorRegisters`). `imcat` asks the terminal with
+XTSMGRAPHICS and uses whatever it says, falling back to 255 for terminals that do
+not answer. Set it by hand with `--max-colours N`, or for both `imcat` and the
+matplotlib backend with the `SYXEL_MAX_COLOURS` environment variable:
+
+```bash
+imcat --max-colours 1024 image.png      # or
+SYXEL_MAX_COLOURS=1024 imcat image.png
+```
+
 Full option list:
 
 | Option | Meaning |
 | --- | --- |
 | `--max-height N` | subsample until the image is at most N pixels high (default: 800) |
 | `--max-width N` | subsample until the image is at most N pixels wide (default: 1200) |
+| `--max-colours N` | quantize to at most N colours (default: ask the terminal) |
 | `--version` | print the version and exit |
 | `--help` | print usage and exit |
 
@@ -125,6 +139,10 @@ fits the window, which redraws it at the right resolution rather than resampling
 it. Terminals that do not report their size in pixels (some multiplexers) fall
 back to 1200x800; set `SYXEL_MAX_WIDTH` and `SYXEL_MAX_HEIGHT` to override.
 
+The palette comes from the terminal in the same way as for `imcat`, including for
+`savefig` (a figure has nothing to say about how many colour registers there are);
+`SYXEL_MAX_COLOURS` overrides it.
+
 `savefig` gains a `sixel` format, which writes at the figure's own size:
 
 ```python
@@ -168,11 +186,13 @@ The pipeline has three stages:
    until it fits the size limits, expand greyscale to three channels and drop any
    alpha channel. The result is an (M,N,3) uint8 array.
 
-2. **Quantize** (`rgb_to_palette`) — SIXEL supports at most 256 colour registers,
-   so colours are counted and the 255 most frequent are kept. If those do not
-   cover at least half of the image, a fixed 5x9x5 RGB cube is used instead.
-   Every distinct source colour is then mapped to its nearest palette entry by
-   squared Euclidean distance.
+2. **Quantize** (`rgb_to_palette`) — the terminal has a limited number of colour
+   registers (`syxel.terminal.colour_registers` asks it how many), so colours are
+   counted and the most frequent ones that fit are kept. If those do not cover at
+   least half of the image, a fixed RGB cube is used instead: 5x9x5 for the 255
+   registers assumed by default, up to 8x15x8 for 1024. Every distinct source
+   colour is then mapped to its nearest palette entry by squared Euclidean
+   distance.
 
 3. **Emit** (`write_sixel`) — write the escape sequences. The image is processed
    in bands of six rows, with one pass per colour present in the band; each output

@@ -24,7 +24,7 @@ All imports are done *inside* functions rather than at module top level;
 ```bash
 pip install -e '.[imcat]'    # install for development (entry point: imcat)
 imcat image.png              # render an image to a SIXEL-capable terminal
-imcat --help                 # one or more files, plus --version/--max-height/--max-width
+imcat --help                 # one or more files, plus --version/--max-height/--max-width/--max-colours
 pixi run -e test test        # run the test suite (pytest + hypothesis, in tests/)
 
 MPLBACKEND=module://syxel.backend_sixel python plot.py   # matplotlib in the terminal
@@ -52,12 +52,16 @@ inside `main()`).
    integer types from the full range of their dtype, floats clipped to [0, 1]).
    Returns an (M,N,3) uint8 array.
 
-2. `rgb_to_palette(rgb)` (`sixel.py`) — SIXEL supports at most 256 registers, so
-   the image must be quantized. The strategy is: count exact colours, take the 255
-   most frequent; if those do not cover at least half the image, fall back to a
-   fixed 5x9x5 RGB cube. Every distinct source colour is then mapped to its nearest
-   palette entry by squared Euclidean distance. Returns `(active, res)` — the
-   palette as (P,3) and the indexed image as (M,N) uint8.
+2. `rgb_to_palette(rgb, max_colours=None)` (`sixel.py`) — the terminal has a
+   limited number of colour registers, so the image must be quantized. The
+   strategy is: count exact colours, take the `max_colours` most frequent; if
+   those do not cover at least half the image, fall back to a fixed RGB cube
+   (`_fixed_cube`, the largest n x (2n-1) x n that fits: 5x9x5 = 225 for the
+   default 255, 8x15x8 = 960 for 1024). Every distinct source colour is then
+   mapped to its nearest palette entry by squared Euclidean distance. Returns
+   `(active, res)` — the palette as (P,3) and the indexed image as (M,N) uint8,
+   or uint16 when the palette has more than 256 entries. `max_colours=None`
+   means `DEFAULT_COLOURS` (255, what the code assumed before it could ask).
 
 3. `write_sixel(out, data, active)` (`sixel.py`) — emits the escape sequences.
    Palette values are rescaled from 0-255 to the SIXEL 0-100 range. The image is
@@ -77,6 +81,17 @@ runs the rest of the pipeline. `FigureManagerSixel.show` writes to
 `sys.stdout.buffer`, while `FigureCanvasSixel.print_sixel` registers a `sixel`
 `savefig` format that renders at the figure's own size. The backend is exported with
 matplotlib's private `_Backend` class, which is the only supported way to define one.
+
+`syxel/terminal.py` asks the terminal how many colour registers it has, with the
+XTSMGRAPHICS query `\x1b[?1;1;0S`. It talks to `/dev/tty` rather than stdout (so
+the answer is right even when the SIXEL stream is redirected), skips the query
+from a background process group (SIGTTIN/SIGTTOU would stop the process), uses
+cbreak mode with `TCSADRAIN` (`setcbreak` defaults to `TCSAFLUSH`, which would
+discard the answer), and gives up after `QUERY_TIMEOUT`. `colour_registers()`
+returns None when the terminal cannot be asked, caches the answer for the
+process, and is overridden by `SYXEL_MAX_COLOURS`/`SYXEL_MAX_COLORS`. Both entry
+points call it and pass the result to `rgb_to_palette`; `imcat --max-colours`
+and the backend's `max_colours=` arguments bypass it.
 
 `syxel/syxel_version.py` holds `__version__`, read dynamically by `pyproject.toml`.
 

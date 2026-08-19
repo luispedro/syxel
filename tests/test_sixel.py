@@ -6,7 +6,8 @@ import pytest
 from hypothesis import given, settings, strategies as st
 from hypothesis.extra import numpy as hnp
 
-from syxel.sixel import _rle, rgb_to_palette, write_sixel
+from syxel.sixel import (DEFAULT_COLOURS, _fixed_cube, _rle,
+                         rgb_to_palette, write_sixel)
 
 # The fixed fallback cube in rgb_to_palette is 5 x 9 x 5
 CUBE_SIZE = 5 * 9 * 5
@@ -413,3 +414,83 @@ def test_write_sixel_round_trips_a_flat_image_much_more_cheaply():
 
     assert np.array_equal(decode_sixel(out), data)
     assert len(out) < data.size // 10
+
+
+def test_the_default_palette_is_unchanged_by_a_bigger_budget():
+    '''255 registers is what the code assumed before it could ask'''
+    assert DEFAULT_COLOURS == 255
+    assert len(_fixed_cube()) == CUBE_SIZE
+
+
+@pytest.mark.parametrize('max_colours,size', [
+                            (16, 2 * 3 * 2),
+                            (112, 4 * 7 * 4),
+                            (255, 5 * 9 * 5),
+                            (256, 5 * 9 * 5),
+                            (1024, 8 * 15 * 8),
+                            ])
+def test_the_cube_grows_with_the_registers_available(max_colours, size):
+    assert len(_fixed_cube(max_colours)) == size
+
+
+@pytest.mark.parametrize('max_colours', [2, 4, 11, 16, 255, 256, 400, 1024])
+def test_the_cube_always_fits_and_spans_the_range(max_colours):
+    cube = _fixed_cube(max_colours)
+
+    assert len(cube) <= max_colours
+    assert cube.min() == 0
+    assert cube.max() == 255
+    assert len(np.unique(cube, axis=0)) == len(cube)
+
+
+@pytest.mark.parametrize('max_colours', [4, 16, 64, 255, 300, 1024])
+def test_the_palette_never_outgrows_the_registers_available(max_colours):
+    rgb = np.random.RandomState(42).randint(0, 256, (40, 40, 3), np.uint8)
+
+    active, res = rgb_to_palette(rgb, max_colours=max_colours)
+
+    assert len(active) <= max_colours
+    assert res.max() < len(active)
+
+
+def test_more_registers_quantize_more_finely():
+    '''The whole point: asking the terminal for more should buy something'''
+    rgb = np.random.RandomState(42).randint(0, 256, (60, 60, 3), np.uint8)
+
+    def error(max_colours):
+        active, res = rgb_to_palette(rgb, max_colours=max_colours)
+        difference = active[res].astype(np.int64) - rgb
+        return (difference ** 2).mean()
+
+    assert error(1024) < error(DEFAULT_COLOURS)
+
+
+def test_a_palette_of_more_than_256_widens_the_indexed_image():
+    '''uint8 has no room for the registers that xterm can be configured with'''
+    colours = np.arange(300, dtype=np.int64)
+    rgb = np.stack([colours % 256, colours // 2, colours // 3], axis=1)
+    rgb = rgb.astype(np.uint8).reshape((10, 30, 3))
+
+    active, res = rgb_to_palette(rgb, max_colours=1024)
+
+    assert len(active) == 300
+    assert res.dtype == np.uint16
+    assert np.array_equal(reconstruct(active, res), rgb)
+
+
+def test_write_sixel_selects_registers_above_255():
+    '''`#n` is a decimal number, so a wide palette needs no new syntax'''
+    data = np.arange(300, dtype=np.uint16).reshape((6, 50))
+    active = np.stack([np.arange(300) % 256] * 3, axis=1).astype(np.int32)
+
+    out = io.BytesIO()
+    write_sixel(out, data, active)
+    out = out.getvalue()
+
+    assert b'#299;2;' in out
+    assert np.array_equal(decode_sixel(out), data)
+
+
+def test_a_single_register_is_still_a_palette():
+    '''Absurd, but it should not be an exception'''
+    assert _fixed_cube(1).shape == (1, 3)

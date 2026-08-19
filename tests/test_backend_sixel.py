@@ -134,6 +134,61 @@ def test_sixel_is_a_supported_savefig_format():
     assert 'sixel' in canvas.get_supported_filetypes()
 
 
+def registers(written):
+    '''The colour registers a SIXEL stream defines (`#n;2;r;g;b`)'''
+    import re
+    return re.findall(rb'#\d+;2;', written)
+
+
+def test_write_figure_quantizes_to_the_colours_asked_for():
+    out = io.BytesIO()
+
+    write_figure(out, a_figure(), max_width=200, max_height=200,
+                 max_colours=16)
+
+    assert len(registers(out.getvalue())) <= 16
+
+
+@pytest.fixture
+def a_terminal_with(monkeypatch):
+    '''Make the terminal claim a given number of colour registers'''
+    from syxel import terminal
+
+    def claim(n):
+        monkeypatch.setattr(terminal, '_queried', terminal._UNKNOWN)
+        monkeypatch.setattr(terminal, '_query_colour_registers', lambda: n)
+    monkeypatch.delenv('SYXEL_MAX_COLOURS', raising=False)
+    monkeypatch.delenv('SYXEL_MAX_COLORS', raising=False)
+    return claim
+
+
+def test_write_figure_asks_the_terminal(a_terminal_with):
+    a_terminal_with(32)
+    out = io.BytesIO()
+
+    write_figure(out, a_figure(), max_width=200, max_height=200)
+
+    assert len(registers(out.getvalue())) <= 32
+
+
+def test_savefig_asks_the_terminal_too(a_terminal_with):
+    '''A figure has nothing to say about how many registers there are'''
+    a_terminal_with(32)
+    out = io.BytesIO()
+
+    a_figure().savefig(out, format='sixel')
+
+    assert len(registers(out.getvalue())) <= 32
+
+
+def test_savefig_takes_max_colours():
+    out = io.BytesIO()
+
+    a_figure().savefig(out, format='sixel', max_colours=16)
+
+    assert len(registers(out.getvalue())) <= 16
+
+
 def test_savefig_to_a_file_object():
     out = io.BytesIO()
 
