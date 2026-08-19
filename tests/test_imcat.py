@@ -135,3 +135,55 @@ def test_load_image_without_imread(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, '__import__', no_imread)
     with pytest.raises(ImportError, match=r'syxel\[imcat\]'):
         load_image(str(tmp_path / 'nonexistent.png'))
+
+
+def test_main_reports_an_unreadable_file(tmp_path, capsysbinary):
+    # A missing file must be a one-line message, not a traceback
+    pytest.importorskip('imread')
+    missing = str(tmp_path / 'nonexistent.png')
+    with pytest.raises(SystemExit) as exc:
+        main([missing])
+    assert exc.value.code == 1
+    captured = capsysbinary.readouterr()
+    assert captured.out == b''
+    err = captured.err.decode()
+    assert err.startswith('imcat: ')
+    assert missing in err
+    assert err.count('\n') == 1
+
+
+def test_main_reports_a_file_it_cannot_decode(tmp_path, capsysbinary):
+    # imread raises RuntimeError, not OSError, for something that is not an image
+    pytest.importorskip('imread')
+    bad = tmp_path / 'bad.png'
+    bad.write_bytes(b'this is not a PNG')
+    with pytest.raises(SystemExit) as exc:
+        main([str(bad)])
+    assert exc.value.code == 1
+    assert capsysbinary.readouterr().err.decode().startswith('imcat: ')
+
+
+def test_main_skips_bad_files_but_writes_the_others(tmp_path, capsysbinary):
+    ifname = image_file(tmp_path)
+    missing = str(tmp_path / 'nonexistent.png')
+    with pytest.raises(SystemExit) as exc:
+        main([missing, ifname])
+    assert exc.value.code == 1
+    captured = capsysbinary.readouterr()
+    # The good image is still written
+    assert captured.out.count(b'\x1bP') == 1
+    assert missing in captured.err.decode()
+
+
+def test_main_without_imread_names_the_extra(tmp_path, monkeypatch, capsysbinary):
+    import builtins
+    real_import = builtins.__import__
+    def no_imread(name, *args, **kwargs):
+        if name == 'imread':
+            raise ImportError('No module named imread')
+        return real_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', no_imread)
+    with pytest.raises(SystemExit) as exc:
+        main([str(tmp_path / 'image.png')])
+    # sys.exit(str) prints the message and exits with status 1
+    assert 'syxel[imcat]' in str(exc.value.code)

@@ -76,12 +76,30 @@ def main(argv=None):
     from syxel.sixel import rgb_to_palette, write_sixel
     args = parse_args(argv)
     out = sys.stdout.buffer
+    status = 0
     for ifname in args.images:
-        rgb = load_image(ifname,
-                         max_height=args.max_height,
-                         max_width=args.max_width)
+        try:
+            rgb = load_image(ifname,
+                             max_height=args.max_height,
+                             max_width=args.max_width)
+        except ImportError as e:
+            # A missing optional dependency will not be there for the next
+            # file either, so there is no point in carrying on
+            sys.exit(f'imcat: {e}')
+        except (OSError, RuntimeError) as e:
+            # Files that cannot be read are reported and skipped (as `cat`
+            # does), but they still make the exit status non-zero. `imread`
+            # signals a missing or unreadable file with OSError and a file it
+            # cannot decode (not an image, unknown extension) with RuntimeError.
+            # Some of those messages already name the file, some do not
+            message = str(e) if ifname in str(e) else f'{ifname}: {e}'
+            print(f'imcat: {message}', file=sys.stderr)
+            status = 1
+            continue
         active, data = rgb_to_palette(rgb)
         write_sixel(out, data, active)
         # Otherwise the shell prompt (or the next image) lands on top of this one
         out.write(b'\n')
     out.flush()
+    if status:
+        sys.exit(status)

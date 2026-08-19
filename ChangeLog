@@ -7,5 +7,8 @@ Version 0.1  2026-08-19 (first release)
 	Quantize to at most 256 colour registers, falling back to a fixed
 	  5x9x5 RGB cube when the most frequent colours do not cover the image
 	Run-length encode the output
+	Report image files that cannot be read (missing, unreadable, or not
+	  an image) as an error message rather than a traceback, skipping
+	  them and exiting with a non-zero status
 	Make imread (imcat extra) and matplotlib (matplotlib extra) optional;
 	  numpy is the only hard dependency
