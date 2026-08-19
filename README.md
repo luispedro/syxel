@@ -5,6 +5,10 @@
 > please open an issue at
 > [github.com/luispedro/syxel/issues](https://github.com/luispedro/syxel/issues).
 
+
+[![Test Status](https://github.com/luispedro/syxel/actions/workflows/test.yml/badge.svg)](https://github.com/luispedro/syxel/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 SIXEL in Python: display images directly in your terminal.
 
 `syxel` is a small, pure-Python package that converts images to the
