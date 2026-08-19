@@ -1,7 +1,9 @@
 # Syxel
 
-> **Pre-release.** This is a work in progress and has not been released yet.
-> Interfaces and output may change, and some rough edges remain.
+> **Early alpha release.** Interfaces and output may still change, and some
+> rough edges remain. Bug reports (and any other feedback) are very welcome:
+> please open an issue at
+> [github.com/luispedro/syxel/issues](https://github.com/luispedro/syxel/issues).
 
 SIXEL in Python: display images directly in your terminal.
 
@@ -16,10 +18,11 @@ It ships a command line tool, `imcat`, and a matplotlib backend, so that
 ## Installation
 
 ```bash
-pip install .
+pip install syxel
 ```
 
-Or, for development (the `imcat` script then tracks your working copy):
+Or, from a checkout, for development (the `imcat` script then tracks your
+working copy):
 
 ```bash
 pip install -e .
@@ -32,9 +35,9 @@ matplotlib figures) to SIXEL. Reading image files and the matplotlib backend eac
 come as an extra:
 
 ```bash
-pip install '.[imcat]'         # the imcat command line tool
-pip install '.[matplotlib]'    # the matplotlib backend
-pip install '.[imcat,matplotlib]'
+pip install 'syxel[imcat]'         # the imcat command line tool
+pip install 'syxel[matplotlib]'    # the matplotlib backend
+pip install 'syxel[imcat,matplotlib]'
 ```
 
 ### Dependencies
@@ -186,6 +189,11 @@ pixi run -e test test
 ```
 
 CI runs the suite on Python 3.11 through 3.14.
+
+Releases are cut by pushing a `v<version>` tag matching `syxel/syxel_version.py`
+(for example `git tag v0.1 && git push origin v0.1`), which builds the sdist and
+wheel and uploads them to PyPI through
+[trusted publishing](https://docs.pypi.org/trusted-publishers/).
 
 ## License
 

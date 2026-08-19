@@ -11,12 +11,26 @@ license = "MIT"
 license-files = ["COPYING.MIT"]
 authors = [{name = "Luis Pedro Coelho", email = "luis@luispedro.org"}]
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Terminals",
 ]
 requires-python = ">=3.11"
 dependencies = ["numpy"]
+
+[project.urls]
+Homepage = "https://github.com/luispedro/syxel"
+Repository = "https://github.com/luispedro/syxel"
+Issues = "https://github.com/luispedro/syxel/issues"
+Changelog = "https://github.com/luispedro/syxel/blob/main/ChangeLog"
 
 [project.optional-dependencies]
 imcat = ["imread"]
