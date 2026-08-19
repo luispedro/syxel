@@ -1,0 +1,11 @@
+Version 0.1  2026-08-19 (first release)
+	Convert images to SIXEL and write them to the terminal
+	Add the imcat command line tool, with --max-height/--max-width
+	  subsampling limits and --version
+	Add a matplotlib backend (syxel.backend_sixel), scaling figures to
+	  the terminal and registering a sixel savefig format
+	Quantize to at most 256 colour registers, falling back to a fixed
+	  5x9x5 RGB cube when the most frequent colours do not cover the image
+	Run-length encode the output
+	Make imread (imcat extra) and matplotlib (matplotlib extra) optional;
+	  numpy is the only hard dependency

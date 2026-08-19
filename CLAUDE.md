@@ -84,3 +84,9 @@ matplotlib's private `_Backend` class, which is the only supported way to define
 
 Commit messages use a short uppercase tag prefix: `ENH` (enhancement), `RFCT`
 (refactor). Follow this style — e.g. `BUG`, `DOC`, `TST` for other kinds of change.
+
+User-visible changes (new features, bug fixes, behaviour or interface changes) are
+recorded in `ChangeLog`, newest version first, under a `Version <n>  <date>` heading
+with one tab-indented line per change. Add an entry as part of the change itself;
+if the top of the file is an already released version, start an unreleased section
+above it. Purely internal work (refactors, tests, CI, documentation) is not listed.
