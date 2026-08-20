@@ -6,6 +6,7 @@
 > [github.com/luispedro/syxel/issues](https://github.com/luispedro/syxel/issues).
 
 
+[![Downloads](https://pepy.tech/badge/syxel)](https://pepy.tech/project/syxel)
 [![Test Status](https://github.com/luispedro/syxel/actions/workflows/test.yml/badge.svg)](https://github.com/luispedro/syxel/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
