@@ -9,7 +9,8 @@ from hypothesis.extra import numpy as hnp
 from syxel.sixel import (DEFAULT_COLOURS, _fixed_cube, _rle,
                          rgb_to_palette, write_sixel)
 
-# The fixed fallback cube in rgb_to_palette is 5 x 9 x 5
+# The fixed cube, which only a palette too small to round into is left with,
+# is 5 x 9 x 5 for the default 255 registers
 CUBE_SIZE = 5 * 9 * 5
 
 
@@ -56,15 +57,62 @@ def test_single_colour_image():
     assert np.array_equal(reconstruct(active, res), rgb)
 
 
-def test_many_colours_fall_back_to_the_cube():
-    '''With far more than 255 colours, the top 255 cover almost nothing'''
+def test_many_colours_fall_back_to_rounding():
+    '''With far more than 255 colours, the top 255 cover almost nothing
+
+    The low bits are then thrown away until they do, which for uniform noise
+    means five of them from every channel: 8 x 8 x 8 = 512 colours, of which
+    the most frequent 255 cover more than half the image.
+    '''
     random = np.random.RandomState(42)
     rgb = random.randint(0, 256, size=(64, 64, 3)).astype(np.uint8)
     assert n_distinct(rgb) > 255
 
     active, res = rgb_to_palette(rgb)
 
-    assert len(active) == CUBE_SIZE
+    assert len(active) == 255
+    for channel in range(3):
+        assert len(np.unique(active[:, channel])) == 8
+
+
+def test_rounding_keeps_the_ends_of_the_range():
+    '''Truncating alone would leave white grey; the levels are rescaled'''
+    random = np.random.RandomState(11)
+    rgb = random.randint(0, 256, size=(64, 64, 3)).astype(np.uint8)
+
+    active, res = rgb_to_palette(rgb)
+
+    assert active.min() == 0
+    assert active.max() == 255
+
+
+def test_rounding_beats_the_fixed_cube_on_a_gradient():
+    '''The point of rounding: registers go where the image has colours'''
+    y, x = np.mgrid[0:60, 0:90]
+    rgb = np.stack([x * 255 // 89, y * 255 // 59, np.zeros_like(x)], axis=-1)
+    rgb = (rgb + np.random.RandomState(5).randint(0, 8, rgb.shape))
+    rgb = rgb.clip(0, 255).astype(np.uint8)
+    assert n_distinct(rgb) > 255
+
+    active, res = rgb_to_palette(rgb)
+    cube = _fixed_cube()
+
+    def error(active, res):
+        return ((active[res].astype(np.int64) - rgb) ** 2).mean()
+
+    flat = rgb.reshape((-1, 3)).astype(np.int32)
+    with_cube = ((cube[:, None] - flat[None, :]) ** 2).sum(2).argmin(0)
+    assert error(active, res) < error(cube, with_cube.reshape(rgb.shape[:2]))
+
+
+def test_a_tiny_palette_still_falls_back_to_the_cube():
+    '''Rounding bottoms out at 8 colours, which 2 registers cannot cover'''
+    random = np.random.RandomState(42)
+    rgb = random.randint(0, 256, size=(32, 32, 3)).astype(np.uint8)
+
+    active, res = rgb_to_palette(rgb, max_colours=2)
+
+    assert np.array_equal(active, _fixed_cube(2))
 
 
 def test_dominant_colours_are_kept_despite_a_noisy_minority():
@@ -117,11 +165,34 @@ def test_palette_is_always_addressable_by_a_sixel_register(rgb):
     assert res.max() < len(active)
 
 
+def rounded_palette_slow(cs, n_pixels, max_colours=255):
+    '''Reference implementation of the rounding fallback
+
+    A plain dictionary rebuild of the whole histogram at every step, against
+    which the incremental array version can be checked. `cs` must be in order
+    of first appearance, which is how ties are broken.
+    '''
+    from collections import Counter
+    shifts = [0, 0, 0]
+    for channel in [2, 0, 1] * 7:
+        shifts[channel] += 1
+        rounded = Counter()
+        for colour, n in cs.items():
+            rounded[tuple(v >> s << s for v, s in zip(colour, shifts))] += n
+        top = sorted(rounded, key=lambda c: -rounded[c])[:max_colours]
+        if sum(rounded[c] for c in top) >= 0.5 * n_pixels:
+            return np.array([[(v >> s) * 255 // (255 >> s)
+                                    for v, s in zip(c, shifts)]
+                                for c in top], dtype=np.int32)
+    return _fixed_cube(max_colours)
+
+
 def rgb_to_palette_slow(rgb):
     '''Reference implementation: the original per-pixel Python loop
 
-    This is what `rgb_to_palette` looked like before it was vectorized. It is
-    kept here so that the fast version can be checked against it.
+    This is what `rgb_to_palette` looked like before it was vectorized (with
+    the fallback updated to the rounding one). It is kept here so that the
+    fast version can be checked against it.
     '''
     from collections import Counter
     cs = Counter([tuple(pix) for pix in rgb.reshape((-1, 3))])
@@ -131,18 +202,7 @@ def rgb_to_palette_slow(rgb):
     active = np.array(colours[:255], dtype=np.int32)
     n_pixels = rgb.shape[0] * rgb.shape[1]
     if sum(cs[tuple(c)] for c in active) < 0.5 * n_pixels:
-        active = []
-        for r in range(0, 257, 64):
-            if r == 256:
-                r = 255
-            for g in range(0, 257, 32):
-                if g == 256:
-                    g = 255
-                for b in range(0, 257, 64):
-                    if b == 256:
-                        b = 255
-                    active.append([r, g, b])
-        active = np.array(active, dtype=np.int32)
+        active = rounded_palette_slow(cs, n_pixels)
 
     palette = {}
     for c in colours:
@@ -176,7 +236,7 @@ def test_fast_matches_slow_on_few_colours():
     assert_same_as_slow(rgb)
 
 
-def test_fast_matches_slow_on_the_cube_fallback():
+def test_fast_matches_slow_on_the_rounding_fallback():
     random = np.random.RandomState(42)
     rgb = random.randint(0, 256, size=(40, 40, 3)).astype(np.uint8)
     assert n_distinct(rgb) > 255

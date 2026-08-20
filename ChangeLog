@@ -6,6 +6,11 @@ Version 0.2  (unreleased)
 	Add imcat --max-colours/--max-colors and the SYXEL_MAX_COLOURS
 	  environment variable, which also applies to the matplotlib backend
 	Grow the fixed fallback cube with the palette, from 5x9x5 to 8x15x8
+	When the most frequent colours do not cover the image, round the
+	  colours (dropping low bits from blue, then red, then green, one
+	  bit at a time) until they do, instead of falling back to the
+	  fixed RGB cube, which puts the colour registers where the image
+	  actually uses them
 
 Version 0.1  2026-08-19 (first release)
 	Convert images to SIXEL and write them to the terminal

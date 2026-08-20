@@ -40,6 +40,129 @@ def _fixed_cube(max_colours=DEFAULT_COLOURS):
     return np.array(active, dtype=np.int32)
 
 
+# Bits are dropped from blue first, then red, then green, because that is
+# roughly the order in which the eye stops noticing
+_CHANNEL_ORDER = (2, 0, 1)
+
+# Dropping all 8 bits would leave a single colour; 7 already leaves only
+# 2 x 2 x 2 = 8, which fits in any usable palette
+_MAX_SHIFT = 7
+
+
+def _bit_order():
+    '''Yield the channel to drop the next bit from
+
+    The low bit goes first from blue, then red, then green, then the next bit
+    from blue, and so on, for a total of `3 * _MAX_SHIFT` steps.
+    '''
+    for _ in range(_MAX_SHIFT):
+        for channel in _CHANNEL_ORDER:
+            yield channel
+
+
+def _merge(colours, counts):
+    '''Group colours that have become equal, summing their counts
+
+    Both the input and the output are in order of first appearance, which is
+    how ties between equally frequent colours are broken.
+
+    Parameters
+    ----------
+    colours : ndarray
+        Shape (C,3), values in 0-255
+    counts : ndarray
+        Shape (C,), how many pixels have each colour
+
+    Returns
+    -------
+    colours, counts : ndarray
+        The distinct colours and the summed counts of each group
+    '''
+    import numpy as np
+    keys = (colours[:,0] << 16) | (colours[:,1] << 8) | colours[:,2]
+    ukeys, index, inverse = np.unique(keys, return_index=True,
+                                      return_inverse=True)
+    inverse = inverse.reshape(len(keys))
+    counts = np.bincount(inverse, weights=counts,
+                         minlength=len(ukeys)).astype(np.int64)
+    # `np.unique` sorted the groups by key and `index` points at the first
+    # member of each, so sorting by it restores first-appearance order
+    order = np.argsort(index)
+    return colours[index[order]], counts[order]
+
+
+def _top_sum(counts, k):
+    '''How many pixels the `k` most frequent colours account for
+
+    Which colours those are does not matter here, only how much they cover,
+    so this partitions rather than sorts.
+    '''
+    import numpy as np
+    if len(counts) <= k:
+        return counts.sum()
+    return np.partition(counts, -k)[-k:].sum()
+
+
+def _expand(colours, shifts):
+    '''Rescale truncated colours so that they span the full 0-255 range
+
+    Dropping `shifts[c]` low bits of a channel leaves `256 >> shifts[c]`
+    levels, the highest of which is `255 >> shifts[c] << shifts[c]` rather
+    than 255: white would come out grey. Mapping the levels back over the
+    whole range instead keeps both ends where they were.
+    '''
+    import numpy as np
+    shifts = np.array(shifts, dtype=np.int32)
+    return (colours >> shifts) * 255 // (255 >> shifts)
+
+
+def _rounded_palette(colours, counts, first, max_colours, n_pixels):
+    '''The fallback palette: the image rounded until its top colours cover it
+
+    The low bits of the colours are thrown away one at a time (blue first,
+    then red, then green, then the next bit of each) until the `max_colours`
+    most frequent of the colours that survive account for at least half of the
+    image, which is the same test that sent us here. Unlike a fixed cube, this
+    spends the registers where the image actually has colours.
+
+    Parameters
+    ----------
+    colours : ndarray
+        The distinct colours of the image, shape (C,3)
+    counts : ndarray
+        Shape (C,), how many pixels have each colour
+    first : ndarray
+        Shape (C,), where each colour first appears in the image
+    max_colours : int
+        How many colour registers there are
+    n_pixels : int
+        The size of the image
+
+    Returns
+    -------
+    active : ndarray
+        Shape (P <= max_colours,3) and dtype int32
+    '''
+    import numpy as np
+    # `_merge` keeps whatever order it is given, so start in first-appearance
+    # order and ties stay broken by first appearance all the way down
+    order = np.argsort(first)
+    colours, counts = colours[order], counts[order]
+    shifts = [0, 0, 0]
+    for channel in _bit_order():
+        # Safe in place: `colours` is a fresh array from the sort above, and
+        # from `_merge` on every later pass
+        shifts[channel] += 1
+        colours[:,channel] &= -1 << shifts[channel]
+        colours, counts = _merge(colours, counts)
+        if _top_sum(counts, max_colours) >= 0.5 * n_pixels:
+            top = np.argsort(-counts, kind='stable')[:max_colours]
+            return _expand(colours[top], shifts)
+    # Rounding bottoms out at 2 x 2 x 2 = 8 colours, so this is only reachable
+    # with fewer registers than that, where even those may not cover the image
+    return _fixed_cube(max_colours)
+
+
 def _nearest(colours, active, max_elements=4*1024*1024):
     '''Map each colour to the index of the nearest entry in active
 
@@ -165,7 +288,7 @@ def rgb_to_palette(rgb, max_colours=None):
     active = colours[order[:max_colours]]
     n_pixels = rgb.shape[0] * rgb.shape[1]
     if counts[order[:max_colours]].sum() < 0.5 * n_pixels:
-        active = _fixed_cube(max_colours)
+        active = _rounded_palette(colours, counts, first, max_colours, n_pixels)
 
     lut = _nearest(colours, active)
     res = lut[inverse].reshape(rgb.shape[:2])

@@ -55,10 +55,19 @@ inside `main()`).
 2. `rgb_to_palette(rgb, max_colours=None)` (`sixel.py`) — the terminal has a
    limited number of colour registers, so the image must be quantized. The
    strategy is: count exact colours, take the `max_colours` most frequent; if
-   those do not cover at least half the image, fall back to a fixed RGB cube
-   (`_fixed_cube`, the largest n x (2n-1) x n that fits: 5x9x5 = 225 for the
-   default 255, 8x15x8 = 960 for 1024). Every distinct source colour is then
-   mapped to its nearest palette entry by squared Euclidean distance. Returns
+   those do not cover at least half the image, `_rounded_palette` throws away
+   the low bits of the colours one at a time — blue first, then red, then
+   green, then the next bit of each (`_bit_order`), up to `_MAX_SHIFT` = 7 —
+   re-merging the histogram after each (`_merge`, which keeps first-appearance
+   order so ties break the same way as in the exact path) and stopping as soon
+   as the top `max_colours` do cover half the image, then rescales the
+   surviving levels back over the full 0-255 range (`_expand`). Only a palette
+   too small for the 8 colours that rounding bottoms out at reaches the fixed
+   RGB cube (`_fixed_cube`, the largest n x (2n-1) x n that fits: 5x9x5 = 225
+   for the default 255, 8x15x8 = 960 for 1024). Every distinct source colour is
+   then mapped to its nearest palette entry by squared Euclidean distance
+   (`_nearest`, against the palette that was chosen, not the rounded
+   histogram). Returns
    `(active, res)` — the palette as (P,3) and the indexed image as (M,N) uint8,
    or uint16 when the palette has more than 256 entries. `max_colours=None`
    means `DEFAULT_COLOURS` (255, what the code assumed before it could ask).

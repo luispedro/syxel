@@ -189,10 +189,11 @@ The pipeline has three stages:
 2. **Quantize** (`rgb_to_palette`) — the terminal has a limited number of colour
    registers (`syxel.terminal.colour_registers` asks it how many), so colours are
    counted and the most frequent ones that fit are kept. If those do not cover at
-   least half of the image, a fixed RGB cube is used instead: 5x9x5 for the 255
-   registers assumed by default, up to 8x15x8 for 1024. Every distinct source
-   colour is then mapped to its nearest palette entry by squared Euclidean
-   distance.
+   least half of the image, the colours are rounded — one low bit at a time, from
+   blue first, then red, then green, then the next bit of each — until the most
+   frequent of what is left do cover half of it, so the registers end up where the
+   image actually has colours. Every distinct source colour is then mapped to its
+   nearest palette entry by squared Euclidean distance.
 
 3. **Emit** (`write_sixel`) — write the escape sequences. The image is processed
    in bands of six rows, with one pass per colour present in the band; each output
