@@ -31,31 +31,13 @@ MAX_HEIGHT = 800
 
 
 def _terminal_size():
-    '''Ask the terminal for its size in pixels
+    '''The size of the terminal in pixels, or None if it did not report it
 
-    Returns
-    -------
-    size : (int,int) or None
-        `(width,height)` in pixels, or None if the terminal did not report it
-        (output is redirected, the terminal does not implement it, or this is
-        not a POSIX system).
+    This is `syxel.terminal.terminal_size`, which is where the ioctl lives
+    now that `imcat --info` reports the size too.
     '''
-    import sys
-    import struct
-    try:
-        import fcntl
-        import termios
-    except ImportError:  # not POSIX
-        return None
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            packed = fcntl.ioctl(stream.fileno(), termios.TIOCGWINSZ, b'\0' * 8)
-        except (OSError, AttributeError, ValueError):
-            continue
-        _rows, _cols, width, height = struct.unpack('HHHH', packed)
-        if width > 0 and height > 0:
-            return width, height
-    return None
+    from syxel.terminal import terminal_size
+    return terminal_size()
 
 
 def target_size():

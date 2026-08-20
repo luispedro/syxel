@@ -85,6 +85,27 @@ imcat --max-colours 1024 image.png      # or
 SYXEL_MAX_COLOURS=1024 imcat image.png
 ```
 
+To see what the terminal has to say for itself, ask for a report instead of an
+image:
+
+```console
+$ imcat --info
+syxel version:    0.2
+Terminal:         foot
+SIXEL support:    yes
+Colour registers: 1024
+Terminal size:    120x40 characters, 1440x960 pixels
+Largest image:    1000x1000 pixels
+Colours in use:   1024 (from the terminal)
+Images fit into:  1200x800 pixels (--max-width/--max-height)
+```
+
+Everything above the last two lines is what the terminal answered (`unknown`
+where it said nothing at all, which is what a terminal without SIXEL support
+usually does); the last two are what `imcat` would do with an image, so
+`--info` can be combined with `--max-colours` and the size limits to see their
+effect.
+
 Full option list:
 
 | Option | Meaning |
@@ -92,6 +113,7 @@ Full option list:
 | `--max-height N` | subsample until the image is at most N pixels high (default: 800) |
 | `--max-width N` | subsample until the image is at most N pixels wide (default: 1200) |
 | `--max-colours N` | quantize to at most N colours (default: ask the terminal) |
+| `--info` | report what the terminal supports and exit |
 | `--version` | print the version and exit |
 | `--help` | print usage and exit |
 
@@ -102,7 +124,8 @@ You need a terminal emulator with SIXEL support, such as
 [WezTerm](https://wezfurlong.org/wezterm/),
 [mlterm](https://mlterm.sourceforge.net/), or
 `xterm` started with SIXEL enabled (`xterm -ti vt340`). In a terminal without
-SIXEL support you will just see a wall of escape-sequence bytes.
+SIXEL support you will just see a wall of escape-sequence bytes; `imcat --info`
+asks the terminal whether it can draw them before you try.
 
 Since `imcat` writes to `sys.stdout.buffer`, you can also capture the raw byte
 stream instead of rendering it:

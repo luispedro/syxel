@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from syxel.imcat import _as_uint8, load_image, parse_args, main
+from syxel.imcat import (_as_uint8, format_info, load_image, parse_args,
+                         main)
 
 
 def test_defaults():
@@ -223,3 +224,86 @@ def test_main_without_imread_names_the_extra(tmp_path, monkeypatch, capsysbinary
         main([str(tmp_path / 'image.png')])
     # sys.exit(str) prints the message and exits with status 1
     assert 'syxel[imcat]' in str(exc.value.code)
+
+
+@pytest.fixture
+def quiet_terminal(monkeypatch):
+    '''A terminal that answers everything, without any terminal being there'''
+    from syxel import terminal
+    monkeypatch.delenv('SYXEL_MAX_COLOURS', raising=False)
+    monkeypatch.delenv('SYXEL_MAX_COLORS', raising=False)
+    monkeypatch.setattr(terminal, '_queried', 1024)
+    monkeypatch.setattr(terminal, 'terminal_info',
+                        lambda: {'sixel': True, 'colours': 1024,
+                                 'geometry': (1000, 1000)})
+    monkeypatch.setattr(terminal, 'window_size',
+                        lambda: {'columns': 120, 'rows': 40,
+                                 'width': 1440, 'height': 960})
+    return terminal
+
+
+def reported(lines):
+    '''The report as a dict, so that a test can ask for one line of it'''
+    return dict(line.split(':', 1) for line in lines)
+
+
+def test_info_takes_no_images():
+    args = parse_args(['--info'])
+    assert args.info
+    assert args.images == []
+
+
+@pytest.mark.parametrize('argv', [['--info', 'a.png'], []])
+def test_info_and_images_are_the_two_ways_to_call_it(argv):
+    '''Either an image is displayed or the terminal is described'''
+    with pytest.raises(SystemExit) as exc:
+        parse_args(argv)
+    assert exc.value.code == 2
+
+
+def test_format_info_reports_what_the_terminal_said(quiet_terminal):
+    report = reported(format_info())
+    assert report['SIXEL support'].strip() == 'yes'
+    assert report['Colour registers'].strip() == '1024'
+    assert report['Terminal size'].strip() == '120x40 characters, 1440x960 pixels'
+    assert report['Largest image'].strip() == '1000x1000 pixels'
+    assert report['Colours in use'].strip() == '1024 (from the terminal)'
+
+
+def test_format_info_reports_a_terminal_that_says_nothing(monkeypatch):
+    from syxel import terminal
+    monkeypatch.delenv('SYXEL_MAX_COLOURS', raising=False)
+    monkeypatch.delenv('SYXEL_MAX_COLORS', raising=False)
+    monkeypatch.setattr(terminal, '_queried', None)
+    monkeypatch.setattr(terminal, 'terminal_info',
+                        lambda: {'sixel': None, 'colours': None,
+                                 'geometry': None})
+    monkeypatch.setattr(terminal, 'window_size', lambda: None)
+
+    report = reported(format_info())
+
+    for line in ('SIXEL support', 'Colour registers', 'Terminal size',
+                 'Largest image'):
+        assert report[line].strip().startswith('unknown')
+    # 255 is what the code assumed before it could ask
+    assert report['Colours in use'].strip().startswith('255 (from the default')
+
+
+def test_format_info_reports_the_overrides(quiet_terminal, monkeypatch):
+    report = reported(format_info(max_colours=16, max_width=64, max_height=32))
+    assert report['Colours in use'].strip().startswith('16 (from --max-colours)')
+    assert report['Images fit into'].strip().startswith('64x32 pixels')
+    # What the terminal claims is still reported, override or not
+    assert report['Colour registers'].strip() == '1024'
+
+    monkeypatch.setenv('SYXEL_MAX_COLOURS', '64')
+    report = reported(format_info())
+    assert report['Colours in use'].strip() == '64 (from the environment)'
+
+
+def test_main_writes_the_report_and_no_image(quiet_terminal, capsysbinary):
+    main(['--info'])
+    out = capsysbinary.readouterr().out
+    assert b'\x1bP' not in out
+    assert out.count(b'\n') == len(format_info())
+    assert b'SIXEL support' in out

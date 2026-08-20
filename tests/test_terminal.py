@@ -5,8 +5,10 @@ import re
 import pytest
 
 from syxel import terminal
-from syxel.terminal import (MAX_COLOURS, MIN_COLOURS, _ask, _read_reply,
-                            _query_colour_registers, colour_registers)
+from syxel.terminal import (MAX_COLOURS, MIN_COLOURS, _ask, _ask_all,
+                            _read_replies, _read_reply,
+                            _query_colour_registers, colour_registers,
+                            terminal_info, terminal_size, window_size)
 
 
 @pytest.fixture
@@ -171,3 +173,153 @@ def test_the_environment_is_taken_at_face_value(monkeypatch, unqueried,
 def test_absurd_claims_are_not_believed(monkeypatch, unqueried, claimed, used):
     monkeypatch.setattr(terminal, '_query_colour_registers', lambda: claimed)
     assert colour_registers() == used
+
+
+# The answers of a terminal that knows every question: SIXEL among its device
+# attributes, 1024 colour registers and a 1000x1000 upper bound on images
+ANSWERS = b'\x1b[?62;1;4;6c\x1b[?1;0;1024S\x1b[?2;0;1000;1000S'
+
+
+def test_read_replies_picks_the_answers_apart():
+    read, write = os.pipe()
+    os.write(write, ANSWERS)
+    found = _read_replies(read, [terminal._ATTRIBUTES_REPLY, terminal._REPLY,
+                                 terminal._GEOMETRY_REPLY], timeout=1.)
+    os.close(read)
+    os.close(write)
+    assert found[0].group(1) == b'62;1;4;6'
+    assert found[1].groups() == (b'0', b'1024')
+    assert found[2].groups() == (b'0', b'1000', b'1000')
+
+
+def test_read_replies_does_not_wait_for_a_question_that_was_understood():
+    '''All the answers are here, so nothing is waited for'''
+    import time
+    read, write = os.pipe()
+    os.write(write, ANSWERS)
+    started = time.monotonic()
+    found = _read_replies(read, [terminal._ATTRIBUTES_REPLY, terminal._REPLY,
+                                 terminal._GEOMETRY_REPLY], timeout=10.)
+    took = time.monotonic() - started
+    os.close(read)
+    os.close(write)
+    assert all(match is not None for match in found)
+    assert took < 1.
+
+
+def test_read_replies_gives_up_on_the_questions_that_are_not_answered():
+    '''An older terminal answers the device attributes and nothing else'''
+    read, write = os.pipe()
+    os.write(write, b'\x1b[?1;2c')
+    found = _read_replies(read, [terminal._ATTRIBUTES_REPLY, terminal._REPLY],
+                          timeout=0.05)
+    os.close(read)
+    os.close(write)
+    assert found[0].group(1) == b'1;2'
+    assert found[1] is None
+
+
+def test_ask_all_writes_every_request(fake_terminal):
+    terminal_side, controller = fake_terminal
+    os.write(controller, ANSWERS)
+
+    found = _ask_all(terminal_side,
+                     [terminal._ATTRIBUTES_REQUEST, terminal._REQUEST,
+                      terminal._GEOMETRY_REQUEST],
+                     [terminal._ATTRIBUTES_REPLY, terminal._REPLY,
+                      terminal._GEOMETRY_REPLY],
+                     timeout=1.)
+
+    assert all(match is not None for match in found)
+    written = os.read(controller, 1024)
+    for request in (terminal._ATTRIBUTES_REQUEST, terminal._REQUEST,
+                    terminal._GEOMETRY_REQUEST):
+        assert request in written
+
+
+def info_with(monkeypatch, fake_terminal, reply, timeout=1.):
+    '''Run the full query against a pty that answers with `reply`'''
+    terminal_side, controller = fake_terminal
+    os.write(controller, reply)
+    monkeypatch.setattr(terminal, '_open_terminal', lambda: terminal_side)
+    return terminal_info(timeout=timeout)
+
+
+def test_terminal_info_reads_every_answer(monkeypatch, unqueried,
+                                          fake_terminal):
+    info = info_with(monkeypatch, fake_terminal, ANSWERS)
+    assert info == {'sixel': True, 'colours': 1024, 'geometry': (1000, 1000)}
+
+
+def test_terminal_info_on_a_terminal_without_sixel(monkeypatch, unqueried,
+                                                   fake_terminal):
+    '''4 is what says SIXEL; a terminal that answers without it cannot'''
+    info = info_with(monkeypatch, fake_terminal, b'\x1b[?62;1;6c',
+                     timeout=0.05)
+    assert info == {'sixel': False, 'colours': None, 'geometry': None}
+
+
+def test_terminal_info_on_a_silent_terminal(monkeypatch, unqueried,
+                                            fake_terminal):
+    info = info_with(monkeypatch, fake_terminal, b'', timeout=0.05)
+    assert info == {'sixel': None, 'colours': None, 'geometry': None}
+
+
+def test_terminal_info_rejects_an_unsuccessful_answer(monkeypatch, unqueried,
+                                                      fake_terminal):
+    info = info_with(monkeypatch, fake_terminal,
+                     b'\x1b[?62;4c\x1b[?1;3;0S\x1b[?2;1;0;0S', timeout=0.05)
+    assert info['sixel'] is True
+    assert info['colours'] is None
+    assert info['geometry'] is None
+
+
+def test_terminal_info_without_a_terminal_to_ask(monkeypatch, unqueried):
+    monkeypatch.setattr(terminal, '_open_terminal', lambda: None)
+    assert terminal_info() == {'sixel': None, 'colours': None,
+                               'geometry': None}
+
+
+def test_terminal_info_answers_for_colour_registers_too(monkeypatch, unqueried,
+                                                        fake_terminal):
+    '''The terminal has just been asked, so it is not asked a second time'''
+    info_with(monkeypatch, fake_terminal, ANSWERS)
+    monkeypatch.setattr(terminal, '_query_colour_registers',
+                        lambda: pytest.fail('the terminal was asked twice'))
+    assert colour_registers() == 1024
+
+
+def set_window_size(fd, rows, columns, width, height):
+    import fcntl
+    import struct
+    import termios
+    fcntl.ioctl(fd, termios.TIOCSWINSZ,
+                struct.pack('HHHH', rows, columns, width, height))
+
+
+def test_window_size_reports_characters_and_pixels(monkeypatch,
+                                                   fake_terminal):
+    terminal_side, controller = fake_terminal
+    set_window_size(controller, 40, 120, 1440, 960)
+    monkeypatch.setattr('sys.stdout', terminal_side)
+
+    assert window_size() == {'columns': 120, 'rows': 40,
+                             'width': 1440, 'height': 960}
+    assert terminal_size() == (1440, 960)
+
+
+def test_window_size_without_the_pixel_size(monkeypatch, fake_terminal):
+    '''Most terminals report the size in characters only'''
+    terminal_side, controller = fake_terminal
+    set_window_size(controller, 24, 80, 0, 0)
+    monkeypatch.setattr('sys.stdout', terminal_side)
+
+    assert window_size() == {'columns': 80, 'rows': 24,
+                             'width': None, 'height': None}
+    assert terminal_size() is None
+
+
+def test_window_size_is_unknown_when_capturing():
+    '''pytest replaces stdout and stderr, so there is no terminal to ask'''
+    assert window_size() is None
+    assert terminal_size() is None

@@ -1,4 +1,7 @@
 Version 0.2  (unreleased)
+	Add imcat --info, which reports whether the terminal supports
+	  SIXEL, how many colour registers it has, how big it is, the
+	  largest image it will draw, and what imcat would use
 	Ask the terminal how many SIXEL colour registers it has
 	  (XTSMGRAPHICS) and quantize to that many instead of always
 	  assuming 255, so terminals configured with more (xterm allows up
