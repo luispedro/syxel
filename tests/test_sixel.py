@@ -195,7 +195,9 @@ def rgb_to_palette_slow(rgb):
     fast version can be checked against it.
     '''
     from collections import Counter
-    cs = Counter([tuple(pix) for pix in rgb.reshape((-1, 3))])
+    # `.tolist()` so that the keys are Python ints: the rounding step below
+    # scales colours up by 255, which would overflow numpy's uint8
+    cs = Counter([tuple(pix.tolist()) for pix in rgb.reshape((-1, 3))])
 
     colours = list(cs.keys())
     colours.sort(key=lambda x: -cs[x])
