@@ -1,6 +1,8 @@
 import os
 import pty
 import re
+import select
+import time
 
 import pytest
 
@@ -18,6 +20,27 @@ def fake_terminal():
     with os.fdopen(device, 'r+b', buffering=0) as terminal_side:
         yield terminal_side, controller
     os.close(controller)
+
+
+def read_until(fd, *wanted, timeout=1.):
+    '''Read from `fd` until every one of `wanted` has shown up
+
+    A pty does not deliver everything at once: a single read can come back
+    with only the reply the test itself queued, before what the terminal side
+    wrote has made it around. Gives up after `timeout` seconds and returns
+    whatever did arrive, so that the assertion is what fails.
+    '''
+    deadline = time.monotonic() + timeout
+    buffer = b''
+    while not all(item in buffer for item in wanted):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            break
+        chunk = os.read(fd, 128)
+        if not chunk:
+            break
+        buffer += chunk
+    return buffer
 
 
 def test_read_reply_finds_the_answer():
@@ -68,7 +91,7 @@ def test_ask_writes_the_request_and_reads_the_reply(fake_terminal):
     assert found.groups() == (b'0', b'64')
     # The pty echoed the reply back before cbreak mode turned echo off, which
     # a real terminal would not do; the request is in there too
-    assert terminal._REQUEST in os.read(controller, 128)
+    assert terminal._REQUEST in read_until(controller, terminal._REQUEST)
 
 
 def test_ask_leaves_the_terminal_as_it_found_it(fake_terminal):
@@ -231,9 +254,10 @@ def test_ask_all_writes_every_request(fake_terminal):
                      timeout=1.)
 
     assert all(match is not None for match in found)
-    written = os.read(controller, 1024)
-    for request in (terminal._ATTRIBUTES_REQUEST, terminal._REQUEST,
-                    terminal._GEOMETRY_REQUEST):
+    requests = (terminal._ATTRIBUTES_REQUEST, terminal._REQUEST,
+                terminal._GEOMETRY_REQUEST)
+    written = read_until(controller, *requests)
+    for request in requests:
         assert request in written
 
 
